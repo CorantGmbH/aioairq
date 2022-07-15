@@ -5,7 +5,7 @@ from setuptools import setup
 
 PROJECT_DIR = Path(__file__).parent.resolve()
 README_FILE = PROJECT_DIR / "README.md"
-VERSION = "1.0.0"
+VERSION = "0.1.0"
 
 
 setup(
@@ -23,7 +23,9 @@ setup(
     package_data={"aioairq": ["py.typed"]},
     zip_safe=True,
     platforms="any",
-    install_requires=list(val.strip() for val in open("requirements.txt")),
+    install_requires=list(
+        val.strip() for val in open("requirements.txt", encoding="utf-8")
+    ),
     classifiers=[
         "Intended Audience :: Developers",
         "Operating System :: OS Independent",

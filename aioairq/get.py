@@ -11,17 +11,9 @@ async def get(subject: str, url: str, password: str) -> dict:
     """Returns the given subject from the air-Q device."""
     async with aiohttp.ClientSession() as session:
         async with session.get(f"http://{url}/{subject}") as response:
-
-            content = {}
-            content["status"] = response.status
-            content["content-type"] = response.headers["content-type"]
-
             html = await response.text()
-
             encoded_message = json.loads(html)["content"]
-            content["content"] = decode_message(encoded_message, password)
-
-            return content
+            return decode_message(encoded_message, password)
 
 
 async def data(url: str, password: str) -> dict:

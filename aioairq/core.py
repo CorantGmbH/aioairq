@@ -28,6 +28,10 @@ class AirQ:
     def __repr__(self) -> str:
         return f"AirQ(id={self.airq_ip})"
 
+    @staticmethod
+    def _drop_errors(data: dict) -> dict:
+        return {k: v[0] if isinstance(v, list) else v for k, v in data.items()}
+
     async def get(self, subject: str) -> dict:
         """Returns the given subject from the air-Q device"""
         async with aiohttp.ClientSession() as session:

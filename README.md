@@ -13,14 +13,15 @@ This will be published on PyPI when finished.
 ```python
 import asyncio
 
-from aioairq import get
+from aioairq import AirQ
 
 address = "123ab_air-q.local"
 password = "airqsetup"
+airq = AirQ(address, password)
 
 loop = asyncio.get_event_loop()
 
-data = loop.run_until_complete(get.data(address,password))
-average = loop.run_until_complete(get.average(address,password))
-config = loop.run_until_complete(get.config(address,password))
+data = loop.run_until_complete(airq.data)
+average = loop.run_until_complete(airq.average)
+config = loop.run_until_complete(airq.config)
 ```

@@ -1,4 +1,5 @@
 """air-Q library."""
+from aioairq.core import AirQ
 
 __version__ = "0.1.0"
 __author__ = "Daniel Lehmann"

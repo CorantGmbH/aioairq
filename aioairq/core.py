@@ -29,7 +29,7 @@ class AirQ:
         return f"AirQ(id={self.airq_ip})"
 
     @staticmethod
-    def _drop_errors(data: dict) -> dict:
+    def drop_errors_from_data(data: dict) -> dict:
         return {k: v[0] if isinstance(v, list) else v for k, v in data.items()}
 
     async def get(self, subject: str) -> dict:

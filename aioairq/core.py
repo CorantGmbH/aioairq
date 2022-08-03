@@ -25,6 +25,21 @@ class AirQ:
         self.anchor = f"http://{airq_ip}"
         self.aes = AESCipher(passw)
 
+    async def test_authentication(self) -> bool:
+        """Test if the password provided to the constructor matches.
+
+        Returns True or False depending on the ability to authenticate
+
+        This method is a kludge, as currently the device does not support
+        authentication. This module infers the success of failure of the
+        authentication based on the ability to decode the response from the device.
+        """
+        try:
+            await self.get("ping")
+        except UnicodeDecodeError:
+            return False
+        return True
+
     def __repr__(self) -> str:
         return f"AirQ(id={self.airq_ip})"
 

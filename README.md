@@ -1,3 +1,5 @@
+[![PyPI pyversions](https://img.shields.io/pypi/pyversions/aioairq.svg)](https://pypi.org/project/aioairq/0.1.1/)
+[![PyPI downloads](https://pepy.tech/badge/aioairq)](https://pypi.org/project/aioairq/0.1.1/)
 # PyPI package `aioairq`
 
 Python library for asynchronous data access to local air-Q devices.

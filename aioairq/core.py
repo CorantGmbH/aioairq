@@ -1,11 +1,12 @@
 import json
-from typing import NamedTuple
+from typing import TypedDict
 
-from aioairq.encrypt import AESCipher
 import aiohttp
 
+from aioairq.encrypt import AESCipher
 
-class DeviceInfo(NamedTuple):
+
+class DeviceInfo(TypedDict):
     """Container for device information"""
 
     id: str

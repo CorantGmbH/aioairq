@@ -4,17 +4,25 @@ Python library for asynchronous data access to local air-Q devices.
 
 ## Retrieve data from air-Q
 
+At its present state, `AirQ` requires an `aiohttp` session to be provided by the user:
+
 ```python
 import asyncio
+import aiohttp
 from aioairq import AirQ
 
-address = "123ab_air-q.local"
-password = "airqsetup"
-airq = AirQ(address, password)
+ADDRESS = "123ab_air-q.local"
+PASSWORD = "airqsetup"
 
-loop = asyncio.get_event_loop()
+async def main():
+    async with aiohttp.ClientSession() as session:
+        airq = AirQ(ADDRESS, PASSWORD, session)
 
-data = loop.run_until_complete(airq.data)
-average = loop.run_until_complete(airq.average)
-config = loop.run_until_complete(airq.config)
+        config = await airq.config
+        print(f"Available sensors: {config['sensors']}")
+
+        data = await airq.data
+        print(f"Momentary data: {data}")
+
+asyncio.run(main())
 ```

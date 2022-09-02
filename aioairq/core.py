@@ -1,12 +1,23 @@
 import json
-
-import aiohttp
+from typing import NamedTuple
 
 from aioairq.encrypt import AESCipher
+import aiohttp
+
+
+class DeviceInfo(NamedTuple):
+    """Container for device information"""
+
+    id: str
+    name: str
+    model: str
+    room_type: str
+    sw_version: str
+    hw_version: str
 
 
 class AirQ:
-    def __init__(self, airq_ip: str, passw: str):
+    def __init__(self, airq_ip: str, passw: str, session: aiohttp.ClientSession):
         """Class representing the API for a single AirQ device
 
         The class holds the AESCipher object, responsible for message decoding,
@@ -24,36 +35,53 @@ class AirQ:
         self.airq_ip = airq_ip
         self.anchor = f"http://{airq_ip}"
         self.aes = AESCipher(passw)
+        self._session = session
 
-    async def test_authentication(self) -> bool:
-        """Test if the password provided to the constructor matches.
+    async def validate(self) -> None:
+        """Test if the password provided to the constructor is valid.
 
-        Returns True or False depending on the ability to authenticate
+        Raises InvalidAuth if the password is not correct.
 
-        This method is a kludge, as currently the device does not support
+        This method is a workaround, as currently the device does not support
         authentication. This module infers the success of failure of the
         authentication based on the ability to decode the response from the device.
         """
         try:
             await self.get("ping")
         except UnicodeDecodeError:
-            return False
-        return True
+            raise InvalidAuth
 
     def __repr__(self) -> str:
         return f"AirQ(id={self.airq_ip})"
 
+    async def fetch_device_info(self) -> DeviceInfo:
+        """Fetch condensed device description"""
+        config = await self.get("config")
+        return DeviceInfo(
+            id=config["id"],
+            name=config["devicename"],
+            model=config["type"],
+            room_type=config["RoomType"].replace("-", " ").title(),
+            sw_version=config["air-Q-Software-Version"],
+            hw_version=config["air-Q-Hardware-Version"],
+        )
+
     @staticmethod
-    def drop_errors_from_data(data: dict) -> dict:
+    def drop_uncertainties_from_data(data: dict) -> dict:
+        """Filter returned dict and substitute (value, uncertainty) with the value.
+
+        The device attempts to estimate the uncertainty, or error, of certain readings.
+        These readings are returned as tuples of (value, uncertainty). Often, the latter
+        is not desired, and this is a convenience method to homogenise the dict a little
+        """
         return {k: v[0] if isinstance(v, list) else v for k, v in data.items()}
 
     async def get(self, subject: str) -> dict:
-        """Returns the given subject from the air-Q device"""
-        async with aiohttp.ClientSession() as session:
-            async with session.get(f"{self.anchor}/{subject}") as response:
-                html = await response.text()
-                encoded_message = json.loads(html)["content"]
-                return json.loads(self.aes.decode(encoded_message))
+        """Return the given subject from the air-Q device"""
+        async with self._session.get(f"{self.anchor}/{subject}") as response:
+            html = await response.text()
+            encoded_message = json.loads(html)["content"]
+            return json.loads(self.aes.decode(encoded_message))
 
     @property
     async def data(self):
@@ -66,3 +94,7 @@ class AirQ:
     @property
     async def config(self):
         return await self.get("config")
+
+
+class InvalidAuth(Exception):
+    """Error to indicate there is invalid auth."""

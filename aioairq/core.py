@@ -18,7 +18,13 @@ class DeviceInfo(TypedDict):
 
 
 class AirQ:
-    def __init__(self, airq_ip: str, passw: str, session: aiohttp.ClientSession):
+    def __init__(
+        self,
+        airq_ip: str,
+        passw: str,
+        session: aiohttp.ClientSession,
+        timeout: float = 15,
+    ):
         """Class representing the API for a single AirQ device
 
         The class holds the AESCipher object, responsible for message decoding,
@@ -31,12 +37,19 @@ class AirQ:
             Device's IP might be a more robust option (across the variety of routers)
         passw : str
             Device's password
+        session : aiohttp.ClientSession
+            Session used to communicate to the device. Should be managed by the user
+        timeout : float
+            Maximum time in seconds used by `session.get` to connect to the device
+            before `aiohttp.ServerTimeoutError` is raised. Default: 15 seconds.
+            May be an indication that the device and the host are not on the same WiFi
         """
 
         self.airq_ip = airq_ip
         self.anchor = f"http://{airq_ip}"
         self.aes = AESCipher(passw)
         self._session = session
+        self._timeout = aiohttp.ClientTimeout(connect=timeout)
 
     async def validate(self) -> None:
         """Test if the password provided to the constructor is valid.
@@ -79,7 +92,9 @@ class AirQ:
 
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device"""
-        async with self._session.get(f"{self.anchor}/{subject}") as response:
+        async with self._session.get(
+            f"{self.anchor}/{subject}", timeout=self._timeout
+        ) as response:
             html = await response.text()
             encoded_message = json.loads(html)["content"]
             return json.loads(self.aes.decode(encoded_message))

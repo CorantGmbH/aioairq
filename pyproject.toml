@@ -7,24 +7,21 @@ name = "aioairq"
 readme = "README.md"
 license = { text = "Apache License, Version 2.0" }
 dynamic = ["version"]
-description="Asynchronous library to retrieve data from air-Q devices."
+description = "Asynchronous library to retrieve data from air-Q devices."
 authors = [
-  { name="Daniel Lehmann", email="daniel.lehmann@air-q.com" },
-  { name="Renat Sibgatulin", email="renat.sibgatulin@air-q.com" },
+  { name = "Daniel Lehmann", email = "daniel.lehmann@air-q.com" },
+  { name = "Renat Sibgatulin", email = "renat.sibgatulin@air-q.com" },
 ]
 requires-python = ">=3.9"
-dependencies = [
-  "aiohttp",
-  "pycryptodome"
-]
+dependencies = ["aiohttp", "pycryptodome"]
 classifiers = [
-    "Intended Audience :: Developers",
-    "Operating System :: OS Independent",
-    "Programming Language :: Python",
-    "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
-    "Topic :: Software Development :: Libraries :: Python Modules",
+  "Intended Audience :: Developers",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.9",
+  "Programming Language :: Python :: 3.10",
+  "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 
 [tool.setuptools.dynamic]

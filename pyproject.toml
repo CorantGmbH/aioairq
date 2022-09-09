@@ -23,6 +23,9 @@ classifiers = [
   "Programming Language :: Python :: 3.10",
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
+[project.optional-dependencies]
+tests = ["pytest", "pytest-asyncio"]
+
 
 [tool.setuptools.dynamic]
 version = { attr = "aioairq.__version__" }

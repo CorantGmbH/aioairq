@@ -14,7 +14,6 @@ class DeviceInfo(TypedDict):
     id: str
     name: str
     model: str
-    room_type: str
     sw_version: str
     hw_version: str
 
@@ -91,7 +90,6 @@ class AirQ:
             id=config["id"],
             name=config["devicename"],
             model=config["type"],
-            room_type=config["RoomType"].replace("-", " ").title(),
             sw_version=config["air-Q-Software-Version"],
             hw_version=config["air-Q-Hardware-Version"],
         )

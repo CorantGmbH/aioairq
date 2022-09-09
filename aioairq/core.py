@@ -44,7 +44,8 @@ class AirQ:
         timeout : float
             Maximum time in seconds used by `session.get` to connect to the device
             before `aiohttp.ServerTimeoutError` is raised. Default: 15 seconds.
-            May be an indication that the device and the host are not on the same WiFi
+            Hitting the timeout be an indication that the device and the host are not
+            on the same WiFi
         """
 
         self.__class__._validate_address(address)
@@ -81,7 +82,7 @@ class AirQ:
             raise InvalidAuth
 
     def __repr__(self) -> str:
-        return f"AirQ(id={self.airq_ip})"
+        return f"{self.__class__.__name__}({self.address})"
 
     async def fetch_device_info(self) -> DeviceInfo:
         """Fetch condensed device description"""

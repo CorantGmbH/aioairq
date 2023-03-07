@@ -6,19 +6,23 @@ from typing import TypedDict
 import aiohttp
 
 from aioairq.encrypt import AESCipher
+from aioairq.exceptions import InvalidAirQResponse, InvalidInput
 
 
 class DeviceInfo(TypedDict):
     """Container for device information"""
 
     id: str
-    name: str
-    model: str
-    sw_version: str
-    hw_version: str
+    name: str | None
+    model: str | None
+    suggested_area: str | None
+    sw_version: str | None
+    hw_version: str | None
 
 
 class AirQ:
+    _supported_routes = ["config", "log", "data", "average", "ping"]
+
     def __init__(
         self,
         address: str,
@@ -70,48 +74,71 @@ class AirQ:
         """Test if the password provided to the constructor is valid.
 
         Raises InvalidAuth if the password is not correct.
-
-        This method is a workaround, as currently the device does not support
-        authentication. This module infers the success of failure of the
-        authentication based on the ability to decode the response from the device.
+        This is merely a convenience function, relying on the exception being
+        raised down the stack (namely by AESCipher.decode from within self.get)
         """
-        try:
-            await self.get("ping")
-        except UnicodeDecodeError:
-            raise InvalidAuth
+        await self.get("ping")
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.address})"
 
     async def fetch_device_info(self) -> DeviceInfo:
         """Fetch condensed device description"""
-        config = await self.get("config")
+        config: dict = await self.get("config")
+        room_type = config.get("RoomType")
+
+        try:
+            # The only required field. Should not really be missing, just a precaution
+            device_id = config["id"]
+        except KeyError:
+            raise InvalidAirQResponse
+
         return DeviceInfo(
-            id=config["id"],
-            name=config["devicename"],
-            model=config["type"],
-            sw_version=config["air-Q-Software-Version"],
-            hw_version=config["air-Q-Hardware-Version"],
+            id=device_id,
+            name=config.get("devicename"),
+            model=config.get("type"),
+            suggested_area=room_type.replace("-", " ").title() if room_type else None,
+            sw_version=config.get("air-Q-Software-Version"),
+            hw_version=config.get("air-Q-Hardware-Version"),
         )
 
     @staticmethod
     def drop_uncertainties_from_data(data: dict) -> dict:
-        """Filter returned dict and substitute (value, uncertainty) with the value.
+        """Filter returned dict and substitute [value, uncertainty] with the value.
 
         The device attempts to estimate the uncertainty, or error, of certain readings.
         These readings are returned as tuples of (value, uncertainty). Often, the latter
         is not desired, and this is a convenience method to homogenise the dict a little
         """
-        return {k: v[0] if isinstance(v, list) else v for k, v in data.items()}
+        # `if v else None` is a precaution for the case of v being an empty list
+        # (which ought not to happen really...)
+        return {
+            k: (v[0] if v else None) if isinstance(v, list) else v
+            for k, v in data.items()
+        }
 
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device"""
+        if subject not in self._supported_routes:
+            raise NotImplementedError(
+                f"subject must be in {self._supported_routes}, got {subject}"
+            )
+
         async with self._session.get(
             f"{self.anchor}/{subject}", timeout=self._timeout
         ) as response:
             html = await response.text()
+
+        try:
             encoded_message = json.loads(html)["content"]
-            return json.loads(self.aes.decode(encoded_message))
+        except (json.JSONDecodeError, KeyError):
+            raise InvalidAirQResponse(
+                "AirQ.get() is currently limited to a set of requests, "
+                f"returning a dict with a key 'content' (namely {self._supported_routes}). "
+                f"AirQ.get({subject}) returned {html}"
+            )
+
+        return json.loads(self.aes.decode(encoded_message))
 
     @property
     async def data(self):
@@ -124,11 +151,3 @@ class AirQ:
     @property
     async def config(self):
         return await self.get("config")
-
-
-class InvalidAuth(Exception):
-    """Error to indicate there is invalid auth."""
-
-
-class InvalidInput(Exception):
-    """Error to indicate there is invalid auth."""

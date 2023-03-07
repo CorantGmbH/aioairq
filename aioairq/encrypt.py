@@ -1,12 +1,12 @@
 """Module concerned with encryption of the data"""
 import base64
 
-from Crypto import Random
 from Crypto.Cipher import AES
+
+from aioairq.exceptions import InvalidAuth
 
 
 class AESCipher:
-
     _bs = AES.block_size  # 16
 
     def __init__(self, passw: str):
@@ -29,7 +29,14 @@ class AESCipher:
         iv = decoded[: self._bs]
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         decrypted = cipher.decrypt(decoded[self._bs :])
-        return self._unpad(decrypted.decode("utf-8"))
+        try:
+            # Currently the device does not support proper authentication.
+            # The success or failure of the authentication based on the ability
+            # to decode the response from the device.
+            decoded = decrypted.decode("utf-8")
+        except UnicodeDecodeError:
+            raise InvalidAuth("Failed to decode a message. Incorrect password")
+        return self._unpad(decoded)
 
     @staticmethod
     def _unpad(data: str) -> str:

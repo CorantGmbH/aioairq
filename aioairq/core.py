@@ -113,9 +113,34 @@ class AirQ:
         # `if v else None` is a precaution for the case of v being an empty list
         # (which ought not to happen really...)
         return {
-            k: (v[0] if v else None) if isinstance(v, list) else v
+            k: (v[0] if v else None) if isinstance(v, (list, tuple)) else v
             for k, v in data.items()
         }
+
+    @staticmethod
+    def clip_negative_values(data: dict) -> dict:
+        def clip(value):
+            if isinstance(value, list):
+                return [max(0, value[0]), value[1]]
+            elif isinstance(value, (float, int)):
+                return max(0, value)
+            else:
+                return value
+
+        return {k: clip(v) for k, v in data.items()}
+
+    async def get_latest_data(
+        self,
+        return_average=True,
+        clip_negative_values=True,
+        return_uncertainties=False,
+    ):
+        data = await self.get("average" if return_average else "data")
+        if clip_negative_values:
+            data = self.clip_negative_values(data)
+        if not return_uncertainties:
+            data = self.drop_uncertainties_from_data(data)
+        return data
 
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device"""
@@ -133,8 +158,8 @@ class AirQ:
             encoded_message = json.loads(html)["content"]
         except (json.JSONDecodeError, KeyError):
             raise InvalidAirQResponse(
-                "AirQ.get() is currently limited to a set of requests, "
-                f"returning a dict with a key 'content' (namely {self._supported_routes}). "
+                "AirQ.get() is currently limited to a set of requests, returning "
+                f"a dict with a key 'content' (namely {self._supported_routes}). "
                 f"AirQ.get({subject}) returned {html}"
             )
 

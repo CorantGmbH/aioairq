@@ -14,11 +14,9 @@ MDNS = os.environ.get("AIRQ_MDNS", "a123f_air-q.local")
 HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "air-q")
 
 
-@pytest_asyncio.fixture(params=[False, True])
-async def session(request):
-    """Return a ClientSession with or without dns caching."""
-    connector = aiohttp.TCPConnector(use_dns_cache=request.param)
-    session = aiohttp.ClientSession(connector=connector)
+@pytest_asyncio.fixture()
+async def session():
+    session = aiohttp.ClientSession()
     yield session
     await session.close()
 

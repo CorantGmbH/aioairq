@@ -3,7 +3,7 @@ import pytest
 import pytest_asyncio
 from pytest import fixture
 
-from aioairq import AirQ, InvalidInput
+from aioairq import AirQ
 
 
 @fixture
@@ -31,15 +31,6 @@ async def session():
 @fixture(params=["ip", "mdns"])
 def valid_address(request, ip, mdns):
     return {"ip": ip, "mdns": mdns}[request.param]
-
-
-def test_address_parser(valid_address):
-    AirQ._validate_address(valid_address)
-
-
-def test_address_parser_failure():
-    with pytest.raises(InvalidInput):
-        AirQ._validate_address("illegal_address")
 
 
 @pytest.mark.asyncio

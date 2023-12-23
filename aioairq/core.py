@@ -1,12 +1,10 @@
-import ipaddress
 import json
-import re
 from typing import TypedDict
 
 import aiohttp
 
 from aioairq.encrypt import AESCipher
-from aioairq.exceptions import InvalidAirQResponse, InvalidInput
+from aioairq.exceptions import InvalidAirQResponse
 
 
 class DeviceInfo(TypedDict):
@@ -51,24 +49,11 @@ class AirQ:
             on the same WiFi
         """
 
-        self.__class__._validate_address(address)
         self.address = address
         self.anchor = "http://" + self.address
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
-
-    @classmethod
-    def _validate_address(cls, address: str) -> None:
-        """Raise an error if address is not a valid IP or mDNS."""
-        if not re.match(r"^[a-f0-9]{5}_air-q\..+$", address):
-            try:
-                ipaddress.ip_address(address)
-            except ValueError:
-                raise InvalidInput(
-                    f"{address} does not appear to be a valid IP address "
-                    "or a 5-digit device ID"
-                )
 
     async def validate(self) -> None:
         """Test if the password provided to the constructor is valid.

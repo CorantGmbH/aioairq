@@ -2,6 +2,7 @@
 import base64
 
 from Crypto.Cipher import AES
+from Crypto import Random
 
 from aioairq.exceptions import InvalidAuth
 
@@ -12,8 +13,8 @@ class AESCipher:
     def __init__(self, passw: str):
         """Class responsible for decryption of AirQ responses
 
-        Main idea of the class is to expose a convenience method
-        ``decode`` while the decryption key is stored as an attribute,
+        Main idea of the class is to expose convenience methods
+        ``encode`` and ``decode`` while the key is stored as a private attribute,
         conveniently computed from the password upon initialisation
         of the class' instance
 
@@ -22,12 +23,21 @@ class AESCipher:
         passw : str
             Device's password
         """
-        self.key = self._pass2aes(passw)
+        self._key = self._pass2aes(passw)
 
-    def decode(self, encrypted: bytes) -> str:
+    def encode(self, data: str) -> str:
+        iv = Random.new().read(AES.block_size)
+        cipher = AES.new(self._key, AES.MODE_CBC, iv)
+
+        encoded = data.encode("utf-8")
+        encrypted = iv + cipher.encrypt(self._pad(encoded))
+
+        return base64.b64encode(encrypted).decode("utf-8")
+
+    def decode(self, encrypted: str) -> str:
         decoded = base64.b64decode(encrypted)
         iv = decoded[: self._bs]
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
+        cipher = AES.new(self._key, AES.MODE_CBC, iv)
         decrypted = cipher.decrypt(decoded[self._bs :])
         try:
             # Currently the device does not support proper authentication.
@@ -37,6 +47,11 @@ class AESCipher:
         except UnicodeDecodeError:
             raise InvalidAuth("Failed to decode a message. Incorrect password")
         return self._unpad(decoded)
+
+    @staticmethod
+    def _pad(data: bytes) -> bytes:
+        length = 16 - (len(data) % 16)
+        return data + bytes(chr(length)*length, 'utf-8')
 
     @staticmethod
     def _unpad(data: str) -> str:

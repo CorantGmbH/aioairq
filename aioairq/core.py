@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import TypedDict
+from typing import Any, List, TypedDict
 
 import aiohttp
 
@@ -187,9 +187,9 @@ class AirQ:
                 f"{relative_url} returned {json_string}."
             )
 
-    async def _get_json_and_decode(self, relative_url: str) -> dict:
+    async def _get_json_and_decode(self, relative_url: str) -> Any:
         """Executes a GET request to the air-Q device with the configured timeout
-        decodes the response and returns JSON data as a string.
+        decodes the response and returns JSON data.
 
         relative_url is expected to start with a slash."""
 
@@ -200,9 +200,9 @@ class AirQ:
 
         return json.loads(decoded_json_data)
 
-    async def _post_json_and_decode(self, relative_url: str, post_json_data: dict) -> dict:
+    async def _post_json_and_decode(self, relative_url: str, post_json_data: dict) -> Any:
         """Executes a POST request to the air-Q device with the configured timeout,
-        decodes the response and returns JSON data as a string.
+        decodes the response and returns JSON data.
 
         relative_url is expected to start with a slash."""
 
@@ -249,3 +249,6 @@ class AirQ:
         json_data = await self._post_json_and_decode("/config", post_json_data)
         # json_data will be a string like
         # "Success: new setting saved for key 'devicename'"
+
+    async def get_log(self) -> List[str]:
+        return await self._get_json_and_decode("/log")

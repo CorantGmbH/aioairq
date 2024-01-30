@@ -59,3 +59,12 @@ async def test_device_name(session):
 
     assert device_name_after_setting == new_device_name
     assert device_name_after_resetting == previous_device_name
+
+
+@pytest.mark.asyncio
+async def test_log(session):
+    """Test getting the log. It should be a list."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    log = await airq.get_log()
+
+    assert isinstance(log, list)

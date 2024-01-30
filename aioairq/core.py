@@ -239,3 +239,13 @@ class AirQ:
     @property
     async def config(self):
         return await self.get("config")
+
+    async def get_device_name(self):
+        return (await self.config)["devicename"]
+
+    async def set_device_name(self, device_name):
+        post_json_data = {"devicename": device_name}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'devicename'"

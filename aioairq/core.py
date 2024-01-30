@@ -57,6 +57,16 @@ class AirQ:
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
 
+    async def blink(self) -> str:
+        """Let the device blink in rainbow colors for a short amount of time.
+
+        Returns the device's ID.
+        This function can be used to identify a device, when you have multiple devices.
+        """
+        json_data = await self._get_json("/blink")
+
+        return json_data["id"]
+
     async def validate(self) -> None:
         """Test if the password provided to the constructor is valid.
 
@@ -130,27 +140,41 @@ class AirQ:
         return data
 
     async def get(self, subject: str) -> dict:
-        """Return the given subject from the air-Q device"""
+        """Return the given subject from the air-Q device.
+
+        This function only works on a limited set of subject specified in _supported_routes.
+        Prefer using more specialized functions."""
         if subject not in self._supported_routes:
             raise NotImplementedError(
-                f"subject must be in {self._supported_routes}, got {subject}"
+                "AirQ.get() is currently limited to a set of requests, returning "
+                f"a dict with a key 'content' (namely {self._supported_routes})."
             )
+
+        json_data = await self._get_json("/" + subject)
+
+        encoded_message = json_data["content"]
+        decoded_json_data = self.aes.decode(encoded_message)
+
+        return json.loads(decoded_json_data)
+
+    async def _get_json(self, relative_url: str) -> dict:
+        """Executes a GET request to the air-Q device with the configured timeout
+        and returns JSON data as a dictionary.
+
+        relative_url is expected to start with a slash."""
 
         async with self._session.get(
-            f"{self.anchor}/{subject}", timeout=self._timeout
+                f"{self.anchor}{relative_url}", timeout=self._timeout
         ) as response:
-            html = await response.text()
+            json_string = await response.text()
 
         try:
-            encoded_message = json.loads(html)["content"]
+            return json.loads(json_string)
         except (json.JSONDecodeError, KeyError):
             raise InvalidAirQResponse(
-                "AirQ.get() is currently limited to a set of requests, returning "
-                f"a dict with a key 'content' (namely {self._supported_routes}). "
-                f"AirQ.get({subject}) returned {html}"
+                "_get_json() must only be used to query endpoints returning JSON data. "
+                f"{relative_url} returned {json_string}."
             )
-
-        return json.loads(self.aes.decode(encoded_message))
 
     @property
     async def data(self):

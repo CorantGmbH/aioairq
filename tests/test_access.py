@@ -1,12 +1,11 @@
 import os
+import re
 
 import aiohttp
 import pytest
 import pytest_asyncio
 
 from aioairq import AirQ
-
-SUBJECT = "ping"
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
@@ -29,6 +28,16 @@ async def test_dns_caching_by_repeated_calls(address, repeat_call, session):
     when DNS needs to be resolved / looked up from a cache.
     """
     airq = AirQ(address, PASS, session, timeout=5)
-    await airq.get(SUBJECT)
+
+    await airq.get("ping")
     if repeat_call:
-        await airq.get(SUBJECT)
+        await airq.get("ping")
+
+
+@pytest.mark.asyncio
+async def test_blink(session):
+    """Test the /blink endpoint and whether it returns the device ID."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    device_id = await airq.blink()
+
+    assert re.fullmatch("[0-9a-f]+", device_id) is not None

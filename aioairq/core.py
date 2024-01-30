@@ -166,12 +166,7 @@ class AirQ:
                 f"a dict with a key 'content' (namely {self._supported_routes})."
             )
 
-        json_data = await self._get_json("/" + subject)
-
-        encoded_message = json_data["content"]
-        decoded_json_data = self.aes.decode(encoded_message)
-
-        return json.loads(decoded_json_data)
+        return await self._get_json_and_decode("/" + subject)
 
     async def _get_json(self, relative_url: str) -> dict:
         """Executes a GET request to the air-Q device with the configured timeout
@@ -192,9 +187,22 @@ class AirQ:
                 f"{relative_url} returned {json_string}."
             )
 
+    async def _get_json_and_decode(self, relative_url: str) -> dict:
+        """Executes a GET request to the air-Q device with the configured timeout
+        decodes the response and returns JSON data as a string.
+
+        relative_url is expected to start with a slash."""
+
+        json_data = await self._get_json(relative_url)
+
+        encoded_message = json_data["content"]
+        decoded_json_data = self.aes.decode(encoded_message)
+
+        return json.loads(decoded_json_data)
+
     async def _post_json_and_decode(self, relative_url: str, post_json_data: dict) -> dict:
-        """Executes a POST request to the air-Q device with the configured timeout
-        and returns JSON data as a string.
+        """Executes a POST request to the air-Q device with the configured timeout,
+        decodes the response and returns JSON data as a string.
 
         relative_url is expected to start with a slash."""
 

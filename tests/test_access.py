@@ -82,3 +82,60 @@ async def test_config(session):
     assert isinstance(config, dict)
     assert len(config) > 40
     assert not keys_expected.difference(keys_found)
+
+
+@pytest.mark.asyncio
+async def test_possible_led_themes(session):
+    """Test getting the possible LED themes."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    possible_led_themes = await airq.get_possible_led_themes()
+
+    expected = {"standard", "VOC", "Humidity"}
+
+    assert not expected.difference(possible_led_themes)
+
+
+@pytest.mark.asyncio
+async def test_get_led_theme(session):
+    """Test getting the current LED theme."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    led_theme = await airq.get_led_theme()
+
+    assert isinstance(led_theme["left"], str)
+    assert isinstance(led_theme["right"], str)
+
+
+@pytest.mark.asyncio
+async def test_set_led_theme(session):
+    """Test setting the current LED theme."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    previous_led_theme = await airq.get_led_theme()
+
+    # left only
+    await airq.set_led_theme_left("CO2")
+    led_theme_after_left = await airq.get_led_theme()
+
+    # right only
+    await airq.set_led_theme_right("Noise")
+    led_theme_after_right = await airq.get_led_theme()
+
+    # both
+    await airq.set_led_theme_both("VOC", "PM2.5")
+    led_theme_after_both = await airq.get_led_theme()
+
+    # reset
+    await airq.set_led_theme_both(previous_led_theme["left"], previous_led_theme["right"])
+    led_theme_after_reset = await airq.get_led_theme()
+
+    # asserts
+    assert led_theme_after_left["left"] == "CO2"
+    assert led_theme_after_left["right"] == previous_led_theme["right"]
+
+    assert led_theme_after_right["left"] == "CO2"
+    assert led_theme_after_right["right"] == "Noise"
+
+    assert led_theme_after_both["left"] == "VOC"
+    assert led_theme_after_both["right"] == "PM2.5"
+
+    assert led_theme_after_reset["left"] == previous_led_theme["left"]
+    assert led_theme_after_reset["right"] == previous_led_theme["right"]

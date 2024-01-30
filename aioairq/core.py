@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, List, TypedDict
+from typing import Any, List, Literal, TypedDict
 
 import aiohttp
 
@@ -19,6 +19,10 @@ class DeviceInfo(TypedDict):
     sw_version: str | None
     hw_version: str | None
 
+class LedTheme(TypedDict):
+    """Container holding the LED themes"""
+    left: str
+    right: str
 
 class AirQ:
     _supported_routes = ["config", "log", "data", "average", "ping"]
@@ -256,3 +260,51 @@ class AirQ:
 
     async def get_config(self) -> dict:
         return await self._get_json_and_decode("/config")
+
+    async def get_possible_led_themes(self) -> List[str]:
+        return (await self._get_json_and_decode("/config"))["possibleLedTheme"]
+
+    async def get_led_theme(self) -> LedTheme:
+        led_theme = (await self._get_json_and_decode("/config"))["ledTheme"]
+
+        return LedTheme(left=led_theme["left"], right=led_theme["right"])
+
+    async def set_led_theme_left(self, theme: str):
+        await self._set_led_theme_on_one_side_only("left", theme)
+
+    async def set_led_theme_right(self, theme: str):
+        await self._set_led_theme_on_one_side_only("right", theme)
+
+    async def set_led_theme_both(self, left: str, right: str):
+        post_json_data = {
+            "ledTheme": {
+                "left": left,
+                "right": right
+            }
+        }
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'ledTheme': {'left': 'CO2', 'right': 'standard'}\n"
+
+    async def _set_led_theme_on_one_side_only(self, side: Literal["left", "right"], theme: str):
+        # air-Q does not support setting only one side.
+        # If you do this, the API will answer a misleading error like
+        #
+        # ```
+        # Error: unsupported option for key 'ledTheme' - can be ['standard', 'standard (contrast)', ...]
+        # ```
+        #
+        # Therefore, we first read both sides, so we may set both sides at once.
+        led_theme = await self.get_led_theme()
+
+        post_json_data = {
+            "ledTheme": {
+                "left": theme if side == "left" else led_theme["left"],
+                "right": theme if side == "right" else led_theme["right"]
+            }
+        }
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'ledTheme': {'left': 'CO2', 'right': 'standard'}\n"

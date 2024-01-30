@@ -76,6 +76,22 @@ class AirQ:
         """
         await self.get("ping")
 
+    async def restart(self) -> None:
+        """Restarts the device."""
+        post_json_data = {"reset": True}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: reset command received: will reset device after all setting changes have been applied."
+
+    async def shutdown(self) -> None:
+        """Shuts the device down."""
+        post_json_data = {"shutdown": True}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: shutdown command received: will shutdown device after all setting changes have been applied."
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.address})"
 
@@ -170,11 +186,39 @@ class AirQ:
 
         try:
             return json.loads(json_string)
-        except (json.JSONDecodeError, KeyError):
+        except json.JSONDecodeError:
             raise InvalidAirQResponse(
                 "_get_json() must only be used to query endpoints returning JSON data. "
                 f"{relative_url} returned {json_string}."
             )
+
+    async def _post_json_and_decode(self, relative_url: str, post_json_data: dict) -> dict:
+        """Executes a POST request to the air-Q device with the configured timeout
+        and returns JSON data as a string.
+
+        relative_url is expected to start with a slash."""
+
+        headers = {"Content-Type": "application/x-www-form-urlencoded"}
+        post_data = "request=" + self.aes.encode(json.dumps(post_json_data))
+
+        async with self._session.post(
+                f"{self.anchor}{relative_url}",
+                headers=headers, data=post_data, timeout=self._timeout
+        ) as response:
+            json_string = await response.text()
+
+        try:
+            json_data = json.loads(json_string)
+        except json.JSONDecodeError:
+            raise InvalidAirQResponse(
+                "_post_json() must only be used to query endpoints returning JSON data. "
+                f"{relative_url} returned {json_string}."
+            )
+
+        encoded_message = json_data["content"]
+        decoded_json_data = self.aes.decode(encoded_message)
+
+        return json.loads(decoded_json_data)
 
     @property
     async def data(self):

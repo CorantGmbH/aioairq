@@ -162,3 +162,19 @@ async def test_cloud_remote(session):
     assert value_after_on
     assert not value_after_off
     assert value_after_reset == previous_value
+
+
+@pytest.mark.asyncio
+async def test_time_server(session):
+    """Test setting and getting the time server."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    previous_value = await airq.get_time_server()
+
+    await airq.set_time_server("127.0.0.1")
+    value_after_change = await airq.get_time_server()
+
+    await airq.set_time_server(previous_value)
+    value_after_reset = await airq.get_time_server()
+
+    assert value_after_change == "127.0.0.1"
+    assert value_after_reset == previous_value

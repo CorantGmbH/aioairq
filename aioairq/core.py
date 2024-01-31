@@ -281,6 +281,16 @@ class AirQ:
         # json_data will be a string like
         # "Success: Key 'ifconfig' removed from user config setting. Default setting activated.\n"
 
+    async def get_time_server(self):
+        return (await self.get_config())["TimeServer"]
+
+    async def set_time_server(self, time_server):
+        post_json_data = {"TimeServer": time_server}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'TimeServer': 192.168.0.1\n"
+
     async def get_device_name(self):
         return (await self.get_config())["devicename"]
 

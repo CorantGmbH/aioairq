@@ -6,7 +6,8 @@ from typing import Any, List, Literal, TypedDict
 import aiohttp
 
 from aioairq.encrypt import AESCipher
-from aioairq.exceptions import InvalidAirQResponse
+from aioairq.exceptions import InvalidAirQResponse, InvalidIpAddress
+from aioairq.utils import is_valid_ipv4_address
 
 
 class DeviceInfo(TypedDict):
@@ -244,6 +245,41 @@ class AirQ:
     async def config(self):
         """Deprecated. Use get_config() instead."""
         return await self.get("config")
+
+    async def set_ifconfig_static(self, ip: str, subnet: str, gateway: str, dns: str):
+        """Configures the interface to use a static IP setup.
+
+        Notice: The air-Q only supports IPv4. After calling this function,
+        you should call restart() to apply the settings."""
+        if not is_valid_ipv4_address(ip):
+            raise InvalidIpAddress(f"Invalid IP address: {ip}")
+        if not is_valid_ipv4_address(subnet):
+            raise InvalidIpAddress(f"Invalid subnet address: {subnet}")
+        if not is_valid_ipv4_address(gateway):
+            raise InvalidIpAddress(f"Invalid gateway address: {gateway}")
+        if not is_valid_ipv4_address(dns):
+            raise InvalidIpAddress(f"Invalid DNS server address: {dns}")
+
+        post_json_data = {"ifconfig": {
+            "ip": ip,
+            "subnet": subnet,
+            "gateway": gateway,
+            "dns": dns
+        }}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'ifconfig': {'ip': '192.168.0.42', 'gateway': '192.168.0.1', 'subnet': '255.255.255.0', 'dns': '192.168.0.1'}\n"
+
+    async def set_ifconfig_dhcp(self):
+        """Configures the interface to use DHCP.
+
+        Notice: After calling this function, you should call restart() to apply the settings."""
+        post_json_data = {"DeleteKey": "ifconfig"}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: Key 'ifconfig' removed from user config setting. Default setting activated.\n"
 
     async def get_device_name(self):
         return (await self.get_config())["devicename"]

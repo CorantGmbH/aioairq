@@ -291,6 +291,16 @@ class AirQ:
         # json_data will be a string like
         # "Success: new setting saved for key 'devicename'"
 
+    async def get_cloud_remote(self) -> bool:
+        return (await self._get_json_and_decode("/config"))["cloudRemote"]
+
+    async def set_cloud_remote(self, value: bool):
+        post_json_data = {"cloudRemote": value}
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'cloudRemote': False\n"
+
     async def get_log(self) -> List[str]:
         return await self._get_json_and_decode("/log")
 

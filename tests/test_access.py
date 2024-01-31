@@ -139,3 +139,26 @@ async def test_set_led_theme(session):
 
     assert led_theme_after_reset["left"] == previous_led_theme["left"]
     assert led_theme_after_reset["right"] == previous_led_theme["right"]
+
+
+@pytest.mark.asyncio
+async def test_cloud_remote(session):
+    """Test setting and getting the "cloud remote" setting."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    previous_value = await airq.get_cloud_remote()
+
+    # on
+    await airq.set_cloud_remote(True)
+    value_after_on = await airq.get_cloud_remote()
+
+    # off
+    await airq.set_cloud_remote(False)
+    value_after_off = await airq.get_cloud_remote()
+
+    # reset
+    await airq.set_cloud_remote(previous_value)
+    value_after_reset = await airq.get_cloud_remote()
+
+    assert value_after_on
+    assert not value_after_off
+    assert value_after_reset == previous_value

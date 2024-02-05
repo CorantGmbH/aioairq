@@ -5,7 +5,7 @@ import aiohttp
 import pytest
 import pytest_asyncio
 
-from aioairq import AirQ
+from aioairq import AirQ, NightMode
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
@@ -178,3 +178,42 @@ async def test_time_server(session):
 
     assert value_after_change == "127.0.0.1"
     assert value_after_reset == previous_value
+
+@pytest.mark.asyncio
+async def test_night_mode(session):
+    """Test setting and getting the night mode settings."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    previous_values = await airq.get_night_mode()
+
+    new_values1 = NightMode(
+        activated=True,
+        start_day="03:47",
+        start_night="19:12",
+        brightness_day=19.7,
+        brightness_night=2.3,
+        fan_night_off=True,
+        wifi_night_off=False,  # Hint: Don't disable Wi-Fi when testing ;-)
+        alarm_night_off=True
+    )
+    await airq.set_night_mode(new_values1)
+    values_after_change1 = await airq.get_night_mode()
+
+    new_values2 = NightMode(
+        activated=False,
+        start_day="00:00",
+        start_night="23:59",
+        brightness_day=17.0,
+        brightness_night=4.7,
+        fan_night_off=False,
+        wifi_night_off=True,
+        alarm_night_off=False
+    )
+    await airq.set_night_mode(new_values2)
+    values_after_change2 = await airq.get_night_mode()
+
+    await airq.set_night_mode(previous_values)
+    values_after_reset = await airq.get_night_mode()
+
+    assert values_after_change1 == new_values1
+    assert values_after_change2 == new_values2
+    assert values_after_reset == previous_values

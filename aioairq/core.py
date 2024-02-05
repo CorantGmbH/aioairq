@@ -25,6 +25,46 @@ class LedTheme(TypedDict):
     left: str
     right: str
 
+class NightMode(TypedDict):
+    """Container holding night mode configuration"""
+    activated: bool
+    """Whether the night mode is activated"""
+    start_day: str
+    """End time of night mode in format 'HH:mm'. Note that the time is in UTC."""
+    start_night: str
+    """Start time of night mode in format 'HH:mm'. Note that the time is in UTC."""
+    brightness_day: float
+    """LED brightness outside of night mode.
+    
+    Note:
+    Official docs say valid range is 2.2 to 20.0.
+    The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
+    """
+    brightness_night: float
+    """LED brightness during night mode.
+    
+    Note:
+    Official docs say valid range is 2.2 to 20.0.
+    The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
+    """
+    fan_night_off: bool
+    """Whether the fans are turned off during night mode.
+    
+    Notes from official docs:
+    Turning off the fans will disable the sensors for particle pollution (PM1, PM2.5, PM10).
+    Fire alarm will only trigger for CO and temperature, but not for smoke."""
+    wifi_night_off: bool
+    """Whether Wi-Fi is turned off during night mode.
+    
+    Notes from official docs:
+    When turning off Wi-Fi with this setting and when cloud upload is enabled,
+    data will be cached on the SD card and uploaded eventually when network link is available again."""
+    alarm_night_off: bool
+    """Whether alarms are turned off during night mode.
+    
+    Notes from official docs:
+    This setting disables acoustic warnings. Fire and gas alarm will trigger despite."""
+
 class AirQ:
     _supported_routes = ["config", "log", "data", "average", "ping"]
 
@@ -364,3 +404,35 @@ class AirQ:
         json_data = await self._post_json_and_decode("/config", post_json_data)
         # json_data will be a string like
         # "Success: new setting saved for key 'ledTheme': {'left': 'CO2', 'right': 'standard'}\n"
+
+    async def get_night_mode(self) -> NightMode:
+        night_mode = (await self.get_config())["NightMode"]
+
+        return NightMode(
+            activated=night_mode["Activated"],
+            start_day=night_mode["StartDay"],
+            start_night=night_mode["StartNight"],
+            brightness_day=night_mode["BrightnessDay"],
+            brightness_night=night_mode["BrightnessNight"],
+            fan_night_off=night_mode["FanNightOff"],
+            wifi_night_off=night_mode["WifiNightOff"],
+            alarm_night_off=night_mode["AlarmNightOff"]
+        )
+
+    async def set_night_mode(self, night_mode: NightMode):
+        post_json_data = {
+            "NightMode": {
+                "Activated": night_mode["activated"],
+                "StartDay": night_mode["start_day"],
+                "StartNight": night_mode["start_night"],
+                "BrightnessDay": night_mode["brightness_day"],
+                "BrightnessNight": night_mode["brightness_night"],
+                "FanNightOff": night_mode["fan_night_off"],
+                "WifiNightOff": night_mode["wifi_night_off"],
+                "AlarmNightOff": night_mode["alarm_night_off"]
+            }
+        }
+
+        json_data = await self._post_json_and_decode("/config", post_json_data)
+        # json_data will be a string like
+        # "Success: new setting saved for key 'NightMode': {'Activated': True, 'StartNight': '21:05', 'BrightnessDay': 6.1, 'BrightnessNight': 5.9, 'StartDay': '07:05', 'WifiNightOff': False, 'AlarmNightOff': False, 'FanNightOff': False}\n"

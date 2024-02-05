@@ -80,6 +80,10 @@ pytest
 
 # end Optional: Testing
 
+# Optional: Linting
+pip install pylint
+pylint aioairq/*.py
+
 # Leave the virtual environment when you are done
 deactivate
 ```

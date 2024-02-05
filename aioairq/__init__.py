@@ -5,7 +5,14 @@ __email__ = "daniel.lehmann@corant.de"
 __url__ = "https://www.air-q.com"
 __license__ = "Apache License 2.0"
 __version__ = "0.3.2"
-__all__ = ["AirQ", "DeviceInfo", "NightMode", "InvalidAirQResponse", "InvalidAuth", "InvalidIpAddress"]
+__all__ = [
+    "AirQ",
+    "DeviceInfo",
+    "NightMode",
+    "InvalidAirQResponse",
+    "InvalidAuth",
+    "InvalidIpAddress"
+]
 
 from aioairq.core import AirQ, DeviceInfo, NightMode
 from aioairq.exceptions import InvalidAirQResponse, InvalidAuth, InvalidIpAddress

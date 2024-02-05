@@ -45,7 +45,7 @@ class AESCipher:
             # to decode the response from the device.
             decoded = decrypted.decode("utf-8")
         except UnicodeDecodeError:
-            raise InvalidAuth("Failed to decode a message. Incorrect password")
+            raise InvalidAuth("Failed to decode a message. Incorrect password") from None
         return self._unpad(decoded)
 
     @staticmethod

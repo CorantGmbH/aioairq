@@ -20,19 +20,26 @@ class DeviceInfo(TypedDict):
     sw_version: str | None
     hw_version: str | None
 
+
 class LedTheme(TypedDict):
     """Container holding the LED themes"""
+
     left: str
     right: str
 
+
 class NightMode(TypedDict):
     """Container holding night mode configuration"""
+
     activated: bool
     """Whether the night mode is activated"""
+
     start_day: str
     """End time of night mode in format 'HH:mm'. Note that the time is in UTC."""
+
     start_night: str
     """Start time of night mode in format 'HH:mm'. Note that the time is in UTC."""
+
     brightness_day: float
     """LED brightness outside of night mode.
     
@@ -40,6 +47,7 @@ class NightMode(TypedDict):
     Official docs say valid range is 2.2 to 20.0.
     The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
     """
+
     brightness_night: float
     """LED brightness during night mode.
     
@@ -47,23 +55,28 @@ class NightMode(TypedDict):
     Official docs say valid range is 2.2 to 20.0.
     The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
     """
+
     fan_night_off: bool
     """Whether the fans are turned off during night mode.
     
     Notes from official docs:
     Turning off the fans will disable the sensors for particle pollution (PM1, PM2.5, PM10).
     Fire alarm will only trigger for CO and temperature, but not for smoke."""
+
     wifi_night_off: bool
     """Whether Wi-Fi is turned off during night mode.
     
     Notes from official docs:
     When turning off Wi-Fi with this setting and when cloud upload is enabled,
-    data will be cached on the SD card and uploaded eventually when network link is available again."""
+    data will be cached on the SD card and uploaded eventually
+    when network link is available again."""
+
     alarm_night_off: bool
     """Whether alarms are turned off during night mode.
     
     Notes from official docs:
     This setting disables acoustic warnings. Fire and gas alarm will trigger despite."""
+
 
 class AirQ:
     _supported_routes = ["config", "log", "data", "average", "ping"]
@@ -125,17 +138,13 @@ class AirQ:
         """Restarts the device."""
         post_json_data = {"reset": True}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: reset command received: will reset device after all setting changes have been applied."
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def shutdown(self) -> None:
         """Shuts the device down."""
         post_json_data = {"shutdown": True}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: shutdown command received: will shutdown device after all setting changes have been applied."
+        await self._post_json_and_decode("/config", post_json_data)
 
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}({self.address})"
@@ -148,8 +157,8 @@ class AirQ:
         try:
             # The only required field. Should not really be missing, just a precaution
             device_id = config["id"]
-        except KeyError:
-            raise InvalidAirQResponse
+        except KeyError as e:
+            raise InvalidAirQResponse from e
 
         return DeviceInfo(
             id=device_id,
@@ -180,10 +189,10 @@ class AirQ:
         def clip(value):
             if isinstance(value, list):
                 return [max(0, value[0]), value[1]]
-            elif isinstance(value, (float, int)):
+            if isinstance(value, (float, int)):
                 return max(0, value)
-            else:
-                return value
+
+            return value
 
         return {k: clip(v) for k, v in data.items()}
 
@@ -226,11 +235,11 @@ class AirQ:
 
         try:
             return json.loads(json_string)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             raise InvalidAirQResponse(
                 "_get_json() must only be used to query endpoints returning JSON data. "
                 f"{relative_url} returned {json_string}."
-            )
+            ) from e
 
     async def _get_json_and_decode(self, relative_url: str) -> Any:
         """Executes a GET request to the air-Q device with the configured timeout
@@ -262,11 +271,11 @@ class AirQ:
 
         try:
             json_data = json.loads(json_string)
-        except json.JSONDecodeError:
+        except json.JSONDecodeError as e:
             raise InvalidAirQResponse(
                 "_post_json() must only be used to query endpoints returning JSON data. "
                 f"{relative_url} returned {json_string}."
-            )
+            ) from e
 
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
@@ -307,9 +316,7 @@ class AirQ:
             "dns": dns
         }}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'ifconfig': {'ip': '192.168.0.42', 'gateway': '192.168.0.1', 'subnet': '255.255.255.0', 'dns': '192.168.0.1'}\n"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def set_ifconfig_dhcp(self):
         """Configures the interface to use DHCP.
@@ -317,9 +324,7 @@ class AirQ:
         Notice: After calling this function, you should call restart() to apply the settings."""
         post_json_data = {"DeleteKey": "ifconfig"}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: Key 'ifconfig' removed from user config setting. Default setting activated.\n"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def get_time_server(self):
         return (await self.get_config())["TimeServer"]
@@ -327,9 +332,7 @@ class AirQ:
     async def set_time_server(self, time_server):
         post_json_data = {"TimeServer": time_server}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'TimeServer': 192.168.0.1\n"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def get_device_name(self):
         return (await self.get_config())["devicename"]
@@ -337,9 +340,7 @@ class AirQ:
     async def set_device_name(self, device_name):
         post_json_data = {"devicename": device_name}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'devicename'"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def get_cloud_remote(self) -> bool:
         return (await self._get_json_and_decode("/config"))["cloudRemote"]
@@ -347,9 +348,7 @@ class AirQ:
     async def set_cloud_remote(self, value: bool):
         post_json_data = {"cloudRemote": value}
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'cloudRemote': False\n"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def get_log(self) -> List[str]:
         return await self._get_json_and_decode("/log")
@@ -379,9 +378,7 @@ class AirQ:
             }
         }
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'ledTheme': {'left': 'CO2', 'right': 'standard'}\n"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def _set_led_theme_on_one_side_only(self, side: Literal["left", "right"], theme: str):
         # air-Q does not support setting only one side.
@@ -401,9 +398,7 @@ class AirQ:
             }
         }
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'ledTheme': {'left': 'CO2', 'right': 'standard'}\n"
+        await self._post_json_and_decode("/config", post_json_data)
 
     async def get_night_mode(self) -> NightMode:
         night_mode = (await self.get_config())["NightMode"]
@@ -433,6 +428,4 @@ class AirQ:
             }
         }
 
-        json_data = await self._post_json_and_decode("/config", post_json_data)
-        # json_data will be a string like
-        # "Success: new setting saved for key 'NightMode': {'Activated': True, 'StartNight': '21:05', 'BrightnessDay': 6.1, 'BrightnessNight': 5.9, 'StartDay': '07:05', 'WifiNightOff': False, 'AlarmNightOff': False, 'FanNightOff': False}\n"
+        await self._post_json_and_decode("/config", post_json_data)

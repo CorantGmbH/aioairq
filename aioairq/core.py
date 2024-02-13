@@ -238,10 +238,11 @@ class AirQ:
 
     @property
     async def config(self):
+        """Deprecated. Use get_config() instead."""
         return await self.get("config")
 
     async def get_device_name(self):
-        return (await self.config)["devicename"]
+        return (await self.get_config())["devicename"]
 
     async def set_device_name(self, device_name):
         post_json_data = {"devicename": device_name}
@@ -252,3 +253,6 @@ class AirQ:
 
     async def get_log(self) -> List[str]:
         return await self._get_json_and_decode("/log")
+
+    async def get_config(self) -> dict:
+        return await self._get_json_and_decode("/config")

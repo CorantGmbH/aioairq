@@ -68,3 +68,17 @@ async def test_log(session):
     log = await airq.get_log()
 
     assert isinstance(log, list)
+
+
+@pytest.mark.asyncio
+async def test_config(session):
+    """Test getting the config. It should be a big dictionary."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    config = await airq.get_config()
+
+    keys_expected = {"HotspotChannel", "TimeServer", "cloudUpload", "id", "logging", "sensors"}
+    keys_found = set(config.keys())
+
+    assert isinstance(config, dict)
+    assert len(config) > 40
+    assert not keys_expected.difference(keys_found)

@@ -21,11 +21,22 @@ class DeviceInfo(TypedDict):
     hw_version: str | None
 
 
+class IndividualLedTheme(TypedDict):
+    """Container holding an individual LED theme"""
+
+    low: float
+    high: float
+    datasource: str
+    colorLow: List[int]
+    colorMedium: List[int]
+    colorHigh: List[int]
+
+
 class LedTheme(TypedDict):
     """Container holding the LED themes"""
 
-    left: str
-    right: str
+    left: str | IndividualLedTheme
+    right: str | IndividualLedTheme
 
 
 class NightMode(TypedDict):
@@ -364,13 +375,13 @@ class AirQ:
 
         return LedTheme(left=led_theme["left"], right=led_theme["right"])
 
-    async def set_led_theme_left(self, theme: str):
+    async def set_led_theme_left(self, theme: str | IndividualLedTheme):
         await self._set_led_theme_on_one_side_only("left", theme)
 
-    async def set_led_theme_right(self, theme: str):
+    async def set_led_theme_right(self, theme: str | IndividualLedTheme):
         await self._set_led_theme_on_one_side_only("right", theme)
 
-    async def set_led_theme_both(self, left: str, right: str):
+    async def set_led_theme_both(self, left: str | IndividualLedTheme, right: str | IndividualLedTheme):
         post_json_data = {
             "ledTheme": {
                 "left": left,
@@ -380,7 +391,7 @@ class AirQ:
 
         await self._post_json_and_decode("/config", post_json_data)
 
-    async def _set_led_theme_on_one_side_only(self, side: Literal["left", "right"], theme: str):
+    async def _set_led_theme_on_one_side_only(self, side: Literal["left", "right"], theme: str | IndividualLedTheme):
         # air-Q does not support setting only one side.
         # If you do this, the API will answer a misleading error like
         #

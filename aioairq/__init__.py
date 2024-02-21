@@ -8,11 +8,12 @@ __version__ = "0.4.0"
 __all__ = [
     "AirQ",
     "DeviceInfo",
+    "IndividualLedTheme",
     "NightMode",
     "InvalidAirQResponse",
     "InvalidAuth",
     "InvalidIpAddress"
 ]
 
-from aioairq.core import AirQ, DeviceInfo, NightMode
+from aioairq.core import AirQ, DeviceInfo, IndividualLedTheme, NightMode
 from aioairq.exceptions import InvalidAirQResponse, InvalidAuth, InvalidIpAddress

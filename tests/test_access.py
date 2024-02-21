@@ -5,7 +5,7 @@ import aiohttp
 import pytest
 import pytest_asyncio
 
-from aioairq import AirQ, NightMode
+from aioairq import AirQ, NightMode, IndividualLedTheme
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
@@ -136,6 +136,71 @@ async def test_set_led_theme(session):
 
     assert led_theme_after_both["left"] == "VOC"
     assert led_theme_after_both["right"] == "PM2.5"
+
+    assert led_theme_after_reset["left"] == previous_led_theme["left"]
+    assert led_theme_after_reset["right"] == previous_led_theme["right"]
+
+
+@pytest.mark.asyncio
+async def test_set_individual_led_theme(session):
+    """Test setting an individual LED theme."""
+    airq = AirQ(IP, PASS, session, timeout=5)
+    previous_led_theme = await airq.get_led_theme()
+
+    my_led_theme1 = IndividualLedTheme(
+        low=400,
+        high=760,  # = 20ppm CO2 per LED
+        datasource="co2",
+        colorLow=[0, 255, 0],
+        colorMedium=[255, 255, 0],
+        colorHigh=[255, 0, 0]
+    )
+    my_led_theme2 = IndividualLedTheme(
+        low=20.80,
+        high=20.98,
+        datasource="o2",  # = 0,01% O2 per LED
+        colorLow=[255, 255, 255],
+        colorMedium=[0, 63, 191],
+        colorHigh=[0, 0, 255]
+    )
+
+    # setting one per side, individual themes
+    await airq.set_led_theme_left(my_led_theme1)
+    led_theme_after_individual_left = await airq.get_led_theme()
+
+    await airq.set_led_theme_right(my_led_theme2)
+    led_theme_after_individual_right = await airq.get_led_theme()
+
+    # both individual themes
+    await airq.set_led_theme_both(my_led_theme2, my_led_theme1)
+    led_theme_after_individual_both = await airq.get_led_theme()
+
+    # mixing themes: individual themes vs. string-only themes
+    await airq.set_led_theme_left("VOC")
+    led_theme_after_mixing_left = await airq.get_led_theme()
+
+    await airq.set_led_theme_both(my_led_theme2, "Noise")
+    led_theme_after_mixing_both = await airq.get_led_theme()
+
+    # reset
+    await airq.set_led_theme_both(previous_led_theme["left"], previous_led_theme["right"])
+    led_theme_after_reset = await airq.get_led_theme()
+
+    # asserts
+    assert led_theme_after_individual_left["left"] == my_led_theme1
+    assert led_theme_after_individual_left["right"] == previous_led_theme["right"]
+
+    assert led_theme_after_individual_right["left"] == my_led_theme1
+    assert led_theme_after_individual_right["right"] == my_led_theme2
+
+    assert led_theme_after_individual_both["left"] == my_led_theme2
+    assert led_theme_after_individual_both["right"] == my_led_theme1
+
+    assert led_theme_after_mixing_left["left"] == "VOC"
+    assert led_theme_after_mixing_left["right"] == my_led_theme1
+
+    assert led_theme_after_mixing_both["left"] == my_led_theme2
+    assert led_theme_after_mixing_both["right"] == "Noise"
 
     assert led_theme_after_reset["left"] == previous_led_theme["left"]
     assert led_theme_after_reset["right"] == previous_led_theme["right"]

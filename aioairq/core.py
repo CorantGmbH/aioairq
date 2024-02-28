@@ -9,6 +9,10 @@ from aioairq.encrypt import AESCipher
 from aioairq.exceptions import InvalidAirQResponse, InvalidIpAddress
 from aioairq.utils import is_valid_ipv4_address
 
+LedThemeName = Literal[
+    "standard", "co2_covid19", "CO2", "VOC", "CO", "PM1", "PM2.5", "PM10", "Noise"
+]
+
 
 class DeviceInfo(TypedDict):
     """Container for device information"""
@@ -21,11 +25,24 @@ class DeviceInfo(TypedDict):
     hw_version: str | None
 
 
-class LedTheme(TypedDict):
-    """Container holding the LED themes"""
+class DeviceLedTheme(TypedDict, total=True):
+    """Complete specification of the LED themes of a device.
 
-    left: str
-    right: str
+    Each device is described by two themes, one for each side.
+    """
+
+    left: LedThemeName
+    right: LedThemeName
+
+
+class DeviceLedThemePatch(TypedDict, total=False):
+    """Potentially incomplete specification of the LED themes.
+
+    Helpful for updating the themes.
+    """
+
+    left: LedThemeName
+    right: LedThemeName
 
 
 class NightMode(TypedDict):
@@ -322,7 +339,8 @@ class AirQ:
     async def set_ifconfig_dhcp(self):
         """Configures the interface to use DHCP.
 
-        Notice: After calling this function, you should call restart() to apply the settings."""
+        Notice: After calling this function, you should call restart() to apply the settings.
+        """
         post_json_data = {"DeleteKey": "ifconfig"}
 
         await self._post_json_and_decode("/config", post_json_data)
@@ -357,28 +375,15 @@ class AirQ:
     async def get_config(self) -> dict:
         return await self._get_json_and_decode("/config")
 
-    async def get_possible_led_themes(self) -> List[str]:
+    async def get_possible_led_themes(self) -> List[LedThemeName]:
         return (await self._get_json_and_decode("/config"))["possibleLedTheme"]
 
-    async def get_led_theme(self) -> LedTheme:
+    async def get_led_theme(self) -> DeviceLedTheme:
         led_theme = (await self._get_json_and_decode("/config"))["ledTheme"]
 
-        return LedTheme(left=led_theme["left"], right=led_theme["right"])
+        return DeviceLedTheme(left=led_theme["left"], right=led_theme["right"])
 
-    async def set_led_theme_left(self, theme: str):
-        await self._set_led_theme_on_one_side_only("left", theme)
-
-    async def set_led_theme_right(self, theme: str):
-        await self._set_led_theme_on_one_side_only("right", theme)
-
-    async def set_led_theme_both(self, left: str, right: str):
-        post_json_data = {"ledTheme": {"left": left, "right": right}}
-
-        await self._post_json_and_decode("/config", post_json_data)
-
-    async def _set_led_theme_on_one_side_only(
-        self, side: Literal["left", "right"], theme: str
-    ):
+    async def set_led_theme(self, theme: DeviceLedThemePatch | DeviceLedTheme):
         # air-Q does not support setting only one side.
         # If you do this, the API will answer a misleading error like
         #
@@ -387,16 +392,18 @@ class AirQ:
         # ```
         #
         # Therefore, we first read both sides, so we may set both sides at once.
-        led_theme = await self.get_led_theme()
 
-        post_json_data = {
-            "ledTheme": {
-                "left": theme if side == "left" else led_theme["left"],
-                "right": theme if side == "right" else led_theme["right"],
-            }
-        }
+        # I am not too satisfied with the DeviceLedThemePatch|DeviceLedTheme annotation,
+        # necessary to pacify pyright. A better solution would be to use
+        # proper inheritance, I guess, to indicate that DeviceLedTheme is a
+        # subclass of DeviceLedThemePatch. Does not seem to work with TypedDict and
+        # total={True,False}. Consider switching to pydantic
 
-        await self._post_json_and_decode("/config", post_json_data)
+        if len(theme) < 2:
+            current_led_theme = await self.get_led_theme()
+            theme = current_led_theme | theme
+
+        await self._post_json_and_decode("/config", {"ledTheme": theme})
 
     async def get_night_mode(self) -> NightMode:
         night_mode = (await self.get_config())["NightMode"]

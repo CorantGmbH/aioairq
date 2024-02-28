@@ -45,13 +45,15 @@ class AESCipher:
             # to decode the response from the device.
             decoded = decrypted.decode("utf-8")
         except UnicodeDecodeError:
-            raise InvalidAuth("Failed to decode a message. Incorrect password") from None
+            raise InvalidAuth(
+                "Failed to decode a message. Incorrect password"
+            ) from None
         return self._unpad(decoded)
 
     @staticmethod
     def _pad(data: bytes) -> bytes:
         length = 16 - (len(data) % 16)
-        return data + bytes(chr(length)*length, 'utf-8')
+        return data + bytes(chr(length) * length, "utf-8")
 
     @staticmethod
     def _unpad(data: str) -> str:

@@ -229,7 +229,7 @@ class AirQ:
         relative_url is expected to start with a slash."""
 
         async with self._session.get(
-                f"{self.anchor}{relative_url}", timeout=self._timeout
+            f"{self.anchor}{relative_url}", timeout=self._timeout
         ) as response:
             json_string = await response.text()
 
@@ -254,7 +254,9 @@ class AirQ:
 
         return json.loads(decoded_json_data)
 
-    async def _post_json_and_decode(self, relative_url: str, post_json_data: dict) -> Any:
+    async def _post_json_and_decode(
+        self, relative_url: str, post_json_data: dict
+    ) -> Any:
         """Executes a POST request to the air-Q device with the configured timeout,
         decodes the response and returns JSON data.
 
@@ -264,8 +266,10 @@ class AirQ:
         post_data = "request=" + self.aes.encode(json.dumps(post_json_data))
 
         async with self._session.post(
-                f"{self.anchor}{relative_url}",
-                headers=headers, data=post_data, timeout=self._timeout
+            f"{self.anchor}{relative_url}",
+            headers=headers,
+            data=post_data,
+            timeout=self._timeout,
         ) as response:
             json_string = await response.text()
 
@@ -309,12 +313,9 @@ class AirQ:
         if not is_valid_ipv4_address(dns):
             raise InvalidIpAddress(f"Invalid DNS server address: {dns}")
 
-        post_json_data = {"ifconfig": {
-            "ip": ip,
-            "subnet": subnet,
-            "gateway": gateway,
-            "dns": dns
-        }}
+        post_json_data = {
+            "ifconfig": {"ip": ip, "subnet": subnet, "gateway": gateway, "dns": dns}
+        }
 
         await self._post_json_and_decode("/config", post_json_data)
 
@@ -371,16 +372,13 @@ class AirQ:
         await self._set_led_theme_on_one_side_only("right", theme)
 
     async def set_led_theme_both(self, left: str, right: str):
-        post_json_data = {
-            "ledTheme": {
-                "left": left,
-                "right": right
-            }
-        }
+        post_json_data = {"ledTheme": {"left": left, "right": right}}
 
         await self._post_json_and_decode("/config", post_json_data)
 
-    async def _set_led_theme_on_one_side_only(self, side: Literal["left", "right"], theme: str):
+    async def _set_led_theme_on_one_side_only(
+        self, side: Literal["left", "right"], theme: str
+    ):
         # air-Q does not support setting only one side.
         # If you do this, the API will answer a misleading error like
         #
@@ -394,7 +392,7 @@ class AirQ:
         post_json_data = {
             "ledTheme": {
                 "left": theme if side == "left" else led_theme["left"],
-                "right": theme if side == "right" else led_theme["right"]
+                "right": theme if side == "right" else led_theme["right"],
             }
         }
 
@@ -411,7 +409,7 @@ class AirQ:
             brightness_night=night_mode["BrightnessNight"],
             fan_night_off=night_mode["FanNightOff"],
             wifi_night_off=night_mode["WifiNightOff"],
-            alarm_night_off=night_mode["AlarmNightOff"]
+            alarm_night_off=night_mode["AlarmNightOff"],
         )
 
     async def set_night_mode(self, night_mode: NightMode):
@@ -424,7 +422,7 @@ class AirQ:
                 "BrightnessNight": night_mode["brightness_night"],
                 "FanNightOff": night_mode["fan_night_off"],
                 "WifiNightOff": night_mode["wifi_night_off"],
-                "AlarmNightOff": night_mode["alarm_night_off"]
+                "AlarmNightOff": night_mode["alarm_night_off"],
             }
         }
 

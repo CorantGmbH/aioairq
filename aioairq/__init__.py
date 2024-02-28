@@ -11,7 +11,7 @@ __all__ = [
     "NightMode",
     "InvalidAirQResponse",
     "InvalidAuth",
-    "InvalidIpAddress"
+    "InvalidIpAddress",
 ]
 
 from aioairq.core import AirQ, DeviceInfo, NightMode

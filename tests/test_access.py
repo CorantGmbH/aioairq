@@ -76,7 +76,14 @@ async def test_config(session):
     airq = AirQ(IP, PASS, session, timeout=5)
     config = await airq.get_config()
 
-    keys_expected = {"HotspotChannel", "TimeServer", "cloudUpload", "id", "logging", "sensors"}
+    keys_expected = {
+        "HotspotChannel",
+        "TimeServer",
+        "cloudUpload",
+        "id",
+        "logging",
+        "sensors",
+    }
     keys_found = set(config.keys())
 
     assert isinstance(config, dict)
@@ -124,7 +131,9 @@ async def test_set_led_theme(session):
     led_theme_after_both = await airq.get_led_theme()
 
     # reset
-    await airq.set_led_theme_both(previous_led_theme["left"], previous_led_theme["right"])
+    await airq.set_led_theme_both(
+        previous_led_theme["left"], previous_led_theme["right"]
+    )
     led_theme_after_reset = await airq.get_led_theme()
 
     # asserts
@@ -179,6 +188,7 @@ async def test_time_server(session):
     assert value_after_change == "127.0.0.1"
     assert value_after_reset == previous_value
 
+
 @pytest.mark.asyncio
 async def test_night_mode(session):
     """Test setting and getting the night mode settings."""
@@ -193,7 +203,7 @@ async def test_night_mode(session):
         brightness_night=2.3,
         fan_night_off=True,
         wifi_night_off=False,  # Hint: Don't disable Wi-Fi when testing ;-)
-        alarm_night_off=True
+        alarm_night_off=True,
     )
     await airq.set_night_mode(new_values1)
     values_after_change1 = await airq.get_night_mode()
@@ -206,7 +216,7 @@ async def test_night_mode(session):
         brightness_night=4.7,
         fan_night_off=False,
         wifi_night_off=True,
-        alarm_night_off=False
+        alarm_night_off=False,
     )
     await airq.set_night_mode(new_values2)
     values_after_change2 = await airq.get_night_mode()

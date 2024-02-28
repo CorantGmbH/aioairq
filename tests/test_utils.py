@@ -12,7 +12,7 @@ from aioairq.utils import is_valid_ipv4_address
         "111.9.66.222",
         "252.253.254.255",
         "192.168.178.1",
-    ]
+    ],
 )
 def test_valid_ipv4_address(valid_address):
     assert is_valid_ipv4_address(valid_address)
@@ -36,7 +36,7 @@ def test_valid_ipv4_address(valid_address):
         "7f000001",
         "0x7f000001",
         "60.70.80.90/20",
-    ]
+    ],
 )
 def test_invalid_ipv4_address(invalid_address):
     assert not is_valid_ipv4_address(invalid_address)

@@ -9,10 +9,18 @@ __all__ = [
     "AirQ",
     "DeviceInfo",
     "NightMode",
+    "DeviceLedTheme",
+    "DeviceLedThemePatch",
     "InvalidAirQResponse",
     "InvalidAuth",
     "InvalidIpAddress",
 ]
 
-from aioairq.core import AirQ, DeviceInfo, NightMode
+from aioairq.core import (
+    AirQ,
+    DeviceInfo,
+    DeviceLedTheme,
+    DeviceLedThemePatch,
+    NightMode,
+)
 from aioairq.exceptions import InvalidAirQResponse, InvalidAuth, InvalidIpAddress

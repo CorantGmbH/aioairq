@@ -5,7 +5,7 @@ import aiohttp
 import pytest
 import pytest_asyncio
 
-from aioairq import AirQ, NightMode
+from aioairq import AirQ, DeviceLedTheme, DeviceLedThemePatch, NightMode
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
@@ -112,42 +112,35 @@ async def test_get_led_theme(session):
     assert isinstance(led_theme["right"], str)
 
 
-@pytest.mark.asyncio
-async def test_set_led_theme(session):
-    """Test setting the current LED theme."""
+@pytest_asyncio.fixture()
+async def async_airq(session):
+    # Setup
     airq = AirQ(IP, PASS, session, timeout=5)
     previous_led_theme = await airq.get_led_theme()
 
-    # left only
-    await airq.set_led_theme_left("CO2")
-    led_theme_after_left = await airq.get_led_theme()
+    yield airq
 
-    # right only
-    await airq.set_led_theme_right("Noise")
-    led_theme_after_right = await airq.get_led_theme()
-
-    # both
-    await airq.set_led_theme_both("VOC", "PM2.5")
-    led_theme_after_both = await airq.get_led_theme()
-
-    # reset
-    await airq.set_led_theme_both(
-        previous_led_theme["left"], previous_led_theme["right"]
-    )
+    await airq.set_led_theme(previous_led_theme)
     led_theme_after_reset = await airq.get_led_theme()
+    assert led_theme_after_reset == previous_led_theme
 
-    # asserts
-    assert led_theme_after_left["left"] == "CO2"
-    assert led_theme_after_left["right"] == previous_led_theme["right"]
 
-    assert led_theme_after_right["left"] == "CO2"
-    assert led_theme_after_right["right"] == "Noise"
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "target_theme",
+    [
+        {"left": "CO2"},
+        {"right": "Noise"},
+        {"left": "CO2", "right": "PM2.5"},
+    ],
+)
+async def test_setting_led_theme(async_airq, target_theme):
+    previous_led_theme: DeviceLedTheme = await async_airq.get_led_theme()
+    await async_airq.set_led_theme(DeviceLedThemePatch(**target_theme))
+    led_theme_after_setting = await async_airq.get_led_theme()
 
-    assert led_theme_after_both["left"] == "VOC"
-    assert led_theme_after_both["right"] == "PM2.5"
-
-    assert led_theme_after_reset["left"] == previous_led_theme["left"]
-    assert led_theme_after_reset["right"] == previous_led_theme["right"]
+    for side, theme in led_theme_after_setting.items():
+        assert theme == target_theme.get(side, previous_led_theme[side])
 
 
 @pytest.mark.asyncio

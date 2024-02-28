@@ -49,21 +49,23 @@ source .venv/bin/activate
 
 # Install dependencies
 pip install -e .
+# Optionally, you may install developmental dependencies
+# which include testing, linting/formatting, and pre-commit
+pip install -e ".[dev]" # if errors, see below
 
 # You can now create a script (see example above) and run it
 vim hello-air-q.py
 python hello-air-q.py
+```
 
-# Optional: Testing
+### Testing
 
-# Install optional dependencies for testing
-pip install -e ".[tests]"
-
-# If you get an error message about incompatible version,
-# try to install the packages separately:
+```sh
+# If you get an error message about incompatible version, when attempting
+# pip install -e ".[dev]", you may try to install the packages separately:
 #
 # pip install pytest
-# pip install pytest-asyncio 
+# pip install pytest-asyncio
 
 # Prepare an environment file
 # (You don't want to type your passwords into the shell)
@@ -77,13 +79,30 @@ EOF
 # Run the tests
 source .env
 pytest
+```
 
-# end Optional: Testing
+### Contributing
 
-# Optional: Linting
+This repository uses [pre-commit](https://pre-commit.com/) primarily to ensure linting and formatting using [Ruff](https://github.com/astral-sh/ruff) (besides codespell and yamlling). If you want to commit changes to this repository, make sure you have `pre-commit` installed (included among the `dev` extras). Then initialise the git hooks by running
+
+```sh
+pre-commit install
+```
+
+Once successfully installed, `ruff` git hook will be triggered upon `git commit` and it will lint and try to fix the code you are about to commit. Should any changes be made, the commit will be aborted and you will need to address the lints and stage the modified files to your commit before trying again.
+
+
+### Linting
+
+Ruff's rule list is far less exhaustive than that of `pylint`, so if you want, you can gain additional insight by running `pylint` (not installed as a part of the `dev` extras).
+
+```sh
 pip install pylint
 pylint aioairq/*.py
+```
 
-# Leave the virtual environment when you are done
+Once done, you may leave the virtual environment
+
+```sh
 deactivate
 ```

@@ -26,7 +26,7 @@ classifiers = [
   "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 [project.optional-dependencies]
-tests = ["pytest", "pytest-asyncio"]
+dev = ["ruff", "pre-commit", "pytest", "pytest-asyncio"]
 
 
 [tool.setuptools.dynamic]

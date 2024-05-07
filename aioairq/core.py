@@ -10,7 +10,25 @@ from aioairq.exceptions import InvalidAirQResponse, InvalidIpAddress
 from aioairq.utils import is_valid_ipv4_address
 
 LedThemeName = Literal[
-    "standard", "co2_covid19", "CO2", "VOC", "CO", "PM1", "PM2.5", "PM10", "Noise"
+    "standard",
+    "standard (contrast)",
+    "Virus",
+    "Virus (contrast)",
+    "co2_covid19",
+    "CO2",
+    "VOC",
+    "Humidity",
+    "CO",
+    "NO2",
+    "O3",
+    "Oxygen",
+    "PM1",
+    "PM2.5",
+    "PM10",
+    "Noise",
+    "Noise (contrast)",
+    "Noise Average",
+    "Noise Average (contrast)",
 ]
 
 

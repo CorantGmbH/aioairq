@@ -6,6 +6,7 @@ import pytest
 import pytest_asyncio
 
 from aioairq import AirQ, DeviceLedTheme, DeviceLedThemePatch, NightMode
+from aioairq.exceptions import APIAccessDenied
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
@@ -175,8 +176,19 @@ async def test_cloud_remote(airq):
 
 
 @pytest.mark.asyncio
+async def test_time_server_exception(airq):
+    """Test setting and getting the time server."""
+    if await airq.has_api_access():
+        pytest.skip("Test device has API access, not testing for its failure.")
+    with pytest.raises(APIAccessDenied):
+        await airq.set_time_server("127.0.0.1")
+
+
+@pytest.mark.asyncio
 async def test_time_server(airq):
     """Test setting and getting the time server."""
+    if not (await airq.has_api_access()):
+        pytest.skip("Cannot test time server setting without API access.")
     previous_value = await airq.get_time_server()
 
     await airq.set_time_server("127.0.0.1")

@@ -9,8 +9,7 @@ from aioairq import AirQ, DeviceLedTheme, DeviceLedThemePatch, NightMode
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
-MDNS = os.environ.get("AIRQ_MDNS", "a123f_air-q.local")
-HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "air-q")
+HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "")
 
 
 @pytest_asyncio.fixture()
@@ -21,7 +20,18 @@ async def session():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("address", [IP, HOSTNAME])
+@pytest.mark.parametrize(
+    "address",
+    [
+        IP,
+        pytest.param(
+            HOSTNAME,
+            marks=pytest.mark.skipif(
+                not HOSTNAME, reason="AIRQ_HOSTNAME not specified"
+            ),
+        ),
+    ],
+)
 @pytest.mark.parametrize("repeat_call", [False, True])
 async def test_dns_caching_by_repeated_calls(address, repeat_call, session):
     """Test if a repeated .get request results in a timeout

@@ -1,3 +1,8 @@
+"""Collection of tests meant to run on a physical device.
+
+Device credentials are specified via the environment variables AIRQ_{IP,PASS,HOSTNAME}.
+"""
+
 import os
 import re
 
@@ -123,7 +128,7 @@ async def test_get_led_theme(airq):
 
 
 @pytest_asyncio.fixture()
-async def async_airq(airq):
+async def airq_automatically_restoring_led_theme(airq):
     # Setup
     previous_led_theme = await airq.get_led_theme()
 
@@ -139,15 +144,23 @@ async def async_airq(airq):
     "target_sides",
     [["left"], ["right"], ["left", "right"]],
 )
-async def test_setting_led_theme(async_airq, target_sides):
-    previous_led_theme: DeviceLedTheme = await async_airq.get_led_theme()
-    possible_led_themes = await async_airq.get_possible_led_themes()
+async def test_setting_led_theme(airq_automatically_restoring_led_theme, target_sides):
+    previous_led_theme: DeviceLedTheme = (
+        await airq_automatically_restoring_led_theme.get_led_theme()
+    )
+    possible_led_themes = (
+        await airq_automatically_restoring_led_theme.get_possible_led_themes()
+    )
     unused_led_themes = set(possible_led_themes).difference(
         set(previous_led_theme.values())
     )
     target_theme = dict(zip(target_sides, unused_led_themes))
-    await async_airq.set_led_theme(DeviceLedThemePatch(**target_theme))
-    led_theme_after_setting = await async_airq.get_led_theme()
+    await airq_automatically_restoring_led_theme.set_led_theme(
+        DeviceLedThemePatch(**target_theme)
+    )
+    led_theme_after_setting = (
+        await airq_automatically_restoring_led_theme.get_led_theme()
+    )
 
     for side, theme in led_theme_after_setting.items():
         assert theme == target_theme.get(side, previous_led_theme[side])

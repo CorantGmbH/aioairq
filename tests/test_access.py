@@ -19,6 +19,11 @@ async def session():
     await session.close()
 
 
+@pytest_asyncio.fixture()
+async def airq(session):
+    return AirQ(IP, PASS, session, timeout=5)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "address",
@@ -45,18 +50,16 @@ async def test_dns_caching_by_repeated_calls(address, repeat_call, session):
 
 
 @pytest.mark.asyncio
-async def test_blink(session):
+async def test_blink(airq):
     """Test the /blink endpoint and whether it returns the device ID."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     device_id = await airq.blink()
 
     assert re.fullmatch("[0-9a-f]+", device_id) is not None
 
 
 @pytest.mark.asyncio
-async def test_device_name(session):
+async def test_device_name(airq):
     """Test getting and setting the device name."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     previous_device_name = await airq.get_device_name()
 
     new_device_name = "just-testing"
@@ -72,18 +75,16 @@ async def test_device_name(session):
 
 
 @pytest.mark.asyncio
-async def test_log(session):
+async def test_log(airq):
     """Test getting the log. It should be a list."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     log = await airq.get_log()
 
     assert isinstance(log, list)
 
 
 @pytest.mark.asyncio
-async def test_config(session):
+async def test_config(airq):
     """Test getting the config. It should be a big dictionary."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     config = await airq.get_config()
 
     keys_expected = {
@@ -102,9 +103,8 @@ async def test_config(session):
 
 
 @pytest.mark.asyncio
-async def test_possible_led_themes(session):
+async def test_possible_led_themes(airq):
     """Test getting the possible LED themes."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     possible_led_themes = await airq.get_possible_led_themes()
 
     expected = {"standard", "VOC", "Humidity"}
@@ -113,9 +113,8 @@ async def test_possible_led_themes(session):
 
 
 @pytest.mark.asyncio
-async def test_get_led_theme(session):
+async def test_get_led_theme(airq):
     """Test getting the current LED theme."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     led_theme = await airq.get_led_theme()
 
     assert isinstance(led_theme["left"], str)
@@ -123,9 +122,8 @@ async def test_get_led_theme(session):
 
 
 @pytest_asyncio.fixture()
-async def async_airq(session):
+async def async_airq(airq):
     # Setup
-    airq = AirQ(IP, PASS, session, timeout=5)
     previous_led_theme = await airq.get_led_theme()
 
     yield airq
@@ -155,9 +153,8 @@ async def test_setting_led_theme(async_airq, target_sides):
 
 
 @pytest.mark.asyncio
-async def test_cloud_remote(session):
+async def test_cloud_remote(airq):
     """Test setting and getting the "cloud remote" setting."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     previous_value = await airq.get_cloud_remote()
 
     # on
@@ -178,9 +175,8 @@ async def test_cloud_remote(session):
 
 
 @pytest.mark.asyncio
-async def test_time_server(session):
+async def test_time_server(airq):
     """Test setting and getting the time server."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     previous_value = await airq.get_time_server()
 
     await airq.set_time_server("127.0.0.1")
@@ -194,9 +190,8 @@ async def test_time_server(session):
 
 
 @pytest.mark.asyncio
-async def test_night_mode(session):
+async def test_night_mode(airq):
     """Test setting and getting the night mode settings."""
-    airq = AirQ(IP, PASS, session, timeout=5)
     previous_values = await airq.get_night_mode()
 
     new_values1 = NightMode(

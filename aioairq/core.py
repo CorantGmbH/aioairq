@@ -1,12 +1,18 @@
 from __future__ import annotations
 
+import re
 import json
 from typing import Any, List, Literal, TypedDict
 
 import aiohttp
 
 from aioairq.encrypt import AESCipher
-from aioairq.exceptions import InvalidAirQResponse, InvalidIpAddress
+from aioairq.exceptions import (
+    APIAccessDenied,
+    APIAccessError,
+    InvalidAirQResponse,
+    InvalidIpAddress,
+)
 from aioairq.utils import is_valid_ipv4_address
 
 LedThemeName = Literal[
@@ -149,6 +155,9 @@ class AirQ:
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
+
+    async def has_api_access(self) -> bool:
+        return (await self.get_config())["APIaccess"]
 
     async def blink(self) -> str:
         """Let the device blink in rainbow colors for a short amount of time.
@@ -319,7 +328,10 @@ class AirQ:
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
 
-        return json.loads(decoded_json_data)
+        response_decoded = json.loads(decoded_json_data)
+        if isinstance(response_decoded, str) and response_decoded.startswith("Error"):
+            _lookup_exception_from_firmware_response(response_decoded)
+        return response_decoded
 
     @property
     async def data(self):
@@ -369,7 +381,12 @@ class AirQ:
     async def set_time_server(self, time_server):
         post_json_data = {"TimeServer": time_server}
 
-        await self._post_json_and_decode("/config", post_json_data)
+        try:
+            return await self._post_json_and_decode("/config", post_json_data)
+        except APIAccessDenied:
+            # convert the culprit key as it is used by the firmware
+            # to the name of this specific class method
+            raise APIAccessDenied("set_time_server is only supported for air-Q Science")
 
     async def get_device_name(self):
         return (await self.get_config())["devicename"]
@@ -452,3 +469,18 @@ class AirQ:
         }
 
         await self._post_json_and_decode("/config", post_json_data)
+
+
+def _lookup_exception_from_firmware_response(error_message: str):
+    """Ad hoc function attempting to parse the error message.
+
+    Tries to recognise the error message and issue a specific error.
+    If fails, issues an unspecific APIAccessError.
+    """
+    if m := re.match(
+        r"Error: (?P<message>'.*' is only available for air-Q Science)!\n",
+        error_message,
+    ):
+        raise APIAccessDenied(m.groupdict()["message"])
+    else:
+        raise APIAccessError(error_message)

@@ -127,15 +127,16 @@ async def async_airq(session):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "target_theme",
-    [
-        {"left": "CO2"},
-        {"right": "Noise"},
-        {"left": "CO2", "right": "PM2.5"},
-    ],
+    "target_sides",
+    [["left"], ["right"], ["left", "right"]],
 )
-async def test_setting_led_theme(async_airq, target_theme):
+async def test_setting_led_theme(async_airq, target_sides):
     previous_led_theme: DeviceLedTheme = await async_airq.get_led_theme()
+    possible_led_themes = await async_airq.get_possible_led_themes()
+    unused_led_themes = set(possible_led_themes).difference(
+        set(previous_led_theme.values())
+    )
+    target_theme = dict(zip(target_sides, unused_led_themes))
     await async_airq.set_led_theme(DeviceLedThemePatch(**target_theme))
     led_theme_after_setting = await async_airq.get_led_theme()
 

@@ -245,13 +245,46 @@ class AirQ:
         return_average=True,
         clip_negative_values=True,
         return_uncertainties=False,
+        return_original_keys=False,
     ):
+        """Poll the dictionary with the momentary values from the device.
+
+        Parameters
+        ----------
+        return_average : bool, default is True
+            The device exposes both the raw momentary data as well as their
+            rolling / exponential averages. To access the former, set this to False.
+        clip_negative_values : bool, default is True
+            For brief periods, mostly during self-calibration, the device may return
+            negative sensor values. A conventional solution is to clip them to 0.
+        return_uncertainties : bool, default is False
+            For certain sensors, the device exposes not only the momentary value
+            but also an estimate of its uncertainty. If this parameter is set to True,
+            the values of those sensors will be returned as lists of length 2: [value, uncertainty].
+        return_original_keys : bool, default is False
+            Currently, depending on configuration, the device expose the particulate
+            matter values under two different set of keys: `pm{1,2_5,10}` and `pm{1,2_5,10}_SPS30`.
+            By default, this method strips the `_SPS30` suffix to offer a more homogineous
+            structure of the returned dict.
+        """
+
         data = await self.get("average" if return_average else "data")
         if clip_negative_values:
             data = self.clip_negative_values(data)
         if not return_uncertainties:
             data = self.drop_uncertainties_from_data(data)
+        if not return_original_keys:
+            data = {self._homogenise_key(key): value for key, value in data.items()}
         return data
+
+    def _homogenise_key(self, key: str) -> str:
+        """Meant to capture various changes to the original keys.
+
+        Currently it only strips `_SPS30` suffix from the keys of the particulate
+        values from a new sensor, allowing all PM values to appear under the same keys
+        disregarding the underlying sensor configuration.
+        """
+        return key.replace("_SPS30", "")
 
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device.

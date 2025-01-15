@@ -519,6 +519,10 @@ class AirQ:
     async def set_brighness_config(
         self, default: float | None = None, night: float | None = None
     ) -> None:
+        if not isinstance(default, (int, float, type(None))):
+            raise ValueError(f"Unsupported {type(default)=}")
+        if not isinstance(night, (int, float, type(None))):
+            raise ValueError(f"Unsupported {type(night)=}")
         if default is not None and ((default < 0) or (default > 10)):
             raise ValueError(f"if given, default must be in [0, 10] got {default}")
         if night is not None and ((night < 0) or (night > 10)):

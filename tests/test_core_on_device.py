@@ -315,3 +315,27 @@ async def test_setting_current_brighness(airq_automatically_restoring_night_mode
     else:
         target_key = "brightness_day"
     assert night_mode[target_key] == br_new
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [-1, 11, "5.0"])
+async def test_setting_current_brightness_wrongly(
+    airq_automatically_restoring_night_mode: AirQ, value
+):
+    with pytest.raises(ValueError):
+        await airq_automatically_restoring_night_mode.set_current_brighness(value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [-1, 11, "5.0"])
+@pytest.mark.parametrize(
+    "targets",
+    [["default"], ["night"], ["default", "night"]],
+)
+async def test_setting_brightness_config_wrongly(
+    airq_automatically_restoring_night_mode: AirQ, value, targets
+):
+    with pytest.raises(ValueError):
+        await airq_automatically_restoring_night_mode.set_brighness_config(
+            **{target: value for target in targets}
+        )

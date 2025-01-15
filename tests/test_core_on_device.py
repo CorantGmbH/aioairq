@@ -9,9 +9,9 @@ import re
 import aiohttp
 import pytest
 import pytest_asyncio
-
 from aioairq import AirQ, DeviceLedTheme, DeviceLedThemePatch, NightMode
 from aioairq.exceptions import APIAccessDenied
+from aioairq.utils import is_time_in_interval
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
@@ -278,7 +278,7 @@ async def airq_automatically_restoring_night_mode(airq, request):
     "targets",
     [["default"], ["night"], ["default", "night"]],
 )
-async def test_setting_brighness(
+async def test_setting_brighness_config(
     airq_automatically_restoring_night_mode: AirQ, targets: list[str]
 ):
     _key_map = {"default": "brightness_day", "night": "brightness_night"}
@@ -299,3 +299,19 @@ async def test_setting_brighness(
     )
     updated_night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
     assert updated_night_mode == expected_night_mode
+
+
+@pytest.mark.asyncio
+async def test_setting_current_brighness(airq_automatically_restoring_night_mode: AirQ):
+    br: float = await airq_automatically_restoring_night_mode.get_current_brighness()
+    br_new = (br + 1) % 10
+    await airq_automatically_restoring_night_mode.set_current_brighness(br_new)
+    night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
+
+    if night_mode["activated"] and is_time_in_interval(
+        start=night_mode["start_night"], end=night_mode["start_day"]
+    ):
+        target_key = "brightness_night"
+    else:
+        target_key = "brightness_day"
+    assert night_mode[target_key] == br_new

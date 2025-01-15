@@ -13,7 +13,7 @@ from aioairq.exceptions import (
     InvalidAirQResponse,
     InvalidIpAddress,
 )
-from aioairq.utils import is_valid_ipv4_address
+from aioairq.utils import is_time_in_interval, is_valid_ipv4_address
 
 LedThemeName = Literal[
     "standard",
@@ -544,6 +544,25 @@ class AirQ:
 
         await self._post_json_and_decode("/config", post_json_data)
 
+    async def get_current_brighness(self) -> float:
+        night_mode = await self.get_night_mode()
+        return night_mode[_select_current_brightness_key(night_mode)]
+
+    async def set_current_brighness(self, value: float) -> None:
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"Unsupported {type(value)=}")
+        if value < 0 or value > 10:
+            raise ValueError(f"Unsupported brightness {value=}, must be in [0, 10]")
+
+        night_mode = await self.get_night_mode()
+        target_key = _select_current_brightness_key(night_mode)
+
+        if night_mode[target_key] == value:
+            # spare a round of communication to the device if nothing needs changing
+            return
+
+        await self.set_night_mode(night_mode | {target_key: value})
+
 
 def _lookup_exception_from_firmware_response(error_message: str):
     """Ad hoc function attempting to parse the error message.
@@ -558,3 +577,15 @@ def _lookup_exception_from_firmware_response(error_message: str):
         raise APIAccessDenied(m.groupdict()["message"])
     else:
         raise APIAccessError(error_message)
+
+
+def _select_current_brightness_key(
+    night_mode: NightMode,
+) -> Literal["brightness_day", "brightness_night"]:
+    if night_mode["activated"] and is_time_in_interval(
+        start=night_mode["start_night"], end=night_mode["start_day"]
+    ):
+        target_key = "brightness_night"
+    else:
+        target_key = "brightness_day"
+    return target_key

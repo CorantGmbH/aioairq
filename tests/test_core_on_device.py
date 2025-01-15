@@ -16,6 +16,8 @@ from aioairq.exceptions import APIAccessDenied
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
 HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "")
+BR_SET = {"brightness_day": 5, "brightness_night": 0}
+BR_NEW = {"brightness_day": 6, "brightness_night": 1}
 
 
 @pytest_asyncio.fixture()
@@ -251,3 +253,49 @@ async def test_night_mode(airq):
     assert values_after_change1 == new_values1
     assert values_after_change2 == new_values2
     assert values_after_reset == previous_values
+
+
+@pytest_asyncio.fixture(params=[True, False])
+async def airq_automatically_restoring_night_mode(airq, request):
+    # Store the original
+    previous_night_mode = await airq.get_night_mode()
+
+    # Pre-configure
+    night_mode_activated = request.param
+    await airq.set_night_mode(
+        previous_night_mode | BR_SET | {"activated": night_mode_activated}
+    )
+
+    yield airq
+
+    await airq.set_night_mode(previous_night_mode)
+    restored_night_mode = await airq.get_night_mode()
+    assert restored_night_mode == previous_night_mode
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "targets",
+    [["default"], ["night"], ["default", "night"]],
+)
+async def test_setting_brighness(
+    airq_automatically_restoring_night_mode: AirQ, targets: list[str]
+):
+    _key_map = {"default": "brightness_day", "night": "brightness_night"}
+    previous_night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
+    # the foolowing is the dictionary to be passed to set_brightness_config
+    # and thus has default and/or night as keys
+    requested_brightness_config = {
+        target: BR_NEW[_key_map[target]] for target in targets
+    }
+    # ...while this dict "patch" needs to have different keys,
+    # i.e. brightness_{day,night}
+    expected_night_mode = previous_night_mode | {
+        _key_map[target]: BR_NEW[_key_map[target]] for target in targets
+    }
+
+    await airq_automatically_restoring_night_mode.set_brighness_config(
+        **requested_brightness_config
+    )
+    updated_night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
+    assert updated_night_mode == expected_night_mode

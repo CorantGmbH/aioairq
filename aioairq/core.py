@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import json
+import re
 from typing import Any, List, Literal, TypedDict
 
 import aiohttp
@@ -67,6 +67,11 @@ class DeviceLedThemePatch(TypedDict, total=False):
 
     left: LedThemeName
     right: LedThemeName
+
+
+class Brightness(TypedDict):
+    default: float
+    night: float | None
 
 
 class NightMode(TypedDict):
@@ -498,6 +503,42 @@ class AirQ:
                 "FanNightOff": night_mode["fan_night_off"],
                 "WifiNightOff": night_mode["wifi_night_off"],
                 "AlarmNightOff": night_mode["alarm_night_off"],
+            }
+        }
+
+        await self._post_json_and_decode("/config", post_json_data)
+
+    async def get_brighness_config(self) -> Brightness:
+        night_mode = await self.get_night_mode()
+
+        return Brightness(
+            default=night_mode["brightness_day"],
+            night=night_mode["brightness_night"],
+        )
+
+    async def set_brighness_config(
+        self, default: float | None = None, night: float | None = None
+    ) -> None:
+        if default is not None and ((default < 0) or (default > 10)):
+            raise ValueError(f"if given, default must be in [0, 10] got {default}")
+        if night is not None and ((night < 0) or (night > 10)):
+            raise ValueError(f"if given, night must be in [0, 10] got {night}")
+
+        current_night_mode = await self.get_night_mode()
+        post_json_data = {
+            "NightMode": {
+                "Activated": current_night_mode["activated"],
+                "StartDay": current_night_mode["start_day"],
+                "StartNight": current_night_mode["start_night"],
+                "BrightnessDay": default
+                if default is not None
+                else current_night_mode["brightness_day"],
+                "BrightnessNight": night
+                if night is not None
+                else current_night_mode["brightness_night"],
+                "FanNightOff": current_night_mode["fan_night_off"],
+                "WifiNightOff": current_night_mode["wifi_night_off"],
+                "AlarmNightOff": current_night_mode["alarm_night_off"],
             }
         }
 

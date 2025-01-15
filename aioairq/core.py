@@ -88,18 +88,14 @@ class NightMode(TypedDict):
 
     brightness_day: float
     """LED brightness outside of night mode.
-    
-    Note:
-    Official docs say valid range is 2.2 to 20.0.
-    The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
+
+    The valid range is 0.0 (off) to 10.0 (max).
     """
 
     brightness_night: float
     """LED brightness during night mode.
     
-    Note:
-    Official docs say valid range is 2.2 to 20.0.
-    The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
+    The valid range is 0.0 (off) to 10.0 (max).
     """
 
     fan_night_off: bool

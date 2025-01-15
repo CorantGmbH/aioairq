@@ -225,7 +225,7 @@ async def test_night_mode(airq):
         activated=True,
         start_day="03:47",
         start_night="19:12",
-        brightness_day=19.7,
+        brightness_day=9.7,
         brightness_night=2.3,
         fan_night_off=True,
         wifi_night_off=False,  # Hint: Don't disable Wi-Fi when testing ;-)
@@ -238,7 +238,7 @@ async def test_night_mode(airq):
         activated=False,
         start_day="00:00",
         start_night="23:59",
-        brightness_day=17.0,
+        brightness_day=7.0,
         brightness_night=4.7,
         fan_night_off=False,
         wifi_night_off=True,

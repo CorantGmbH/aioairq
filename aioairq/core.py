@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-import re
 import json
+import logging
+import re
 from typing import Any, List, Literal, TypedDict
 
 import aiohttp
@@ -14,6 +15,8 @@ from aioairq.exceptions import (
     InvalidIpAddress,
 )
 from aioairq.utils import is_valid_ipv4_address
+
+_LOGGER = logging.getLogger(__name__)
 
 LedThemeName = Literal[
     "standard",
@@ -166,6 +169,7 @@ class AirQ:
         This function can be used to identify a device, when you have multiple devices.
         """
         json_data = await self._get_json("/blink")
+        _LOGGER.debug("Received the blink command")
 
         return json_data["id"]
 
@@ -176,17 +180,20 @@ class AirQ:
         This is merely a convenience function, relying on the exception being
         raised down the stack (namely by AESCipher.decode from within self.get)
         """
+        _LOGGER.debug("Checking the access to the device")
         await self.get("ping")
 
     async def restart(self) -> None:
         """Restarts the device."""
         post_json_data = {"reset": True}
+        _LOGGER.info("Received the restart command")
 
         await self._post_json_and_decode("/config", post_json_data)
 
     async def shutdown(self) -> None:
         """Shuts the device down."""
         post_json_data = {"shutdown": True}
+        _LOGGER.info("Received the shutdown command")
 
         await self._post_json_and_decode("/config", post_json_data)
 
@@ -195,6 +202,7 @@ class AirQ:
 
     async def fetch_device_info(self) -> DeviceInfo:
         """Fetch condensed device description"""
+        _LOGGER.debug("Fetching device info")
         config: dict = await self.get("config")
         room_type = config.get("RoomType")
 
@@ -204,7 +212,7 @@ class AirQ:
         except KeyError as e:
             raise InvalidAirQResponse from e
 
-        return DeviceInfo(
+        device_info = DeviceInfo(
             id=device_id,
             name=config.get("devicename"),
             model=config.get("type"),
@@ -212,6 +220,8 @@ class AirQ:
             sw_version=config.get("air-Q-Software-Version"),
             hw_version=config.get("air-Q-Hardware-Version"),
         )
+        _LOGGER.debug(f"Fetched {device_info=}")
+        return device_info
 
     @staticmethod
     def drop_uncertainties_from_data(data: dict) -> dict:
@@ -230,15 +240,21 @@ class AirQ:
 
     @staticmethod
     def clip_negative_values(data: dict) -> dict:
-        def clip(value):
+        _msg_template = "clipping value for {key}: {value} -> 0.0"
+
+        def clip(key: str, value):
             if isinstance(value, list):
+                if value[0] < 0:
+                    _LOGGER.debug(_msg_template.format(key=key, value=value[0]))
                 return [max(0, value[0]), value[1]]
             if isinstance(value, (float, int)):
+                if value < 0:
+                    _LOGGER.debug(_msg_template.format(key=key, value=value))
                 return max(0, value)
 
             return value
 
-        return {k: clip(v) for k, v in data.items()}
+        return {k: clip(k, v) for k, v in data.items()}
 
     async def get_latest_data(
         self,
@@ -268,10 +284,14 @@ class AirQ:
             structure of the returned dict.
         """
 
-        data = await self.get("average" if return_average else "data")
+        route = "average" if return_average else "data"
+        _LOGGER.debug(f"Fetching from {route}")
+        data = await self.get(route)
         if clip_negative_values:
+            _LOGGER.debug("Clippig negative values")
             data = self.clip_negative_values(data)
         if not return_uncertainties:
+            _LOGGER.debug("Dropping uncertainties")
             data = self.drop_uncertainties_from_data(data)
         if not return_original_keys:
             data = {self._homogenise_key(key): value for key, value in data.items()}
@@ -284,7 +304,10 @@ class AirQ:
         values from a new sensor, allowing all PM values to appear under the same keys
         disregarding the underlying sensor configuration.
         """
-        return key.replace("_SPS30", "")
+        _SUFFIX = "_SPS30"
+        if _SUFFIX in key:
+            _LOGGER.debug(f"Dropping {_SUFFIX} from {key}")
+        return key.replace(_SUFFIX, "")
 
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device.
@@ -297,6 +320,7 @@ class AirQ:
                 f"a dict with a key 'content' (namely {self._supported_routes})."
             )
 
+        _LOGGER.debug(f"Fetching from {subject}")
         return await self._get_json_and_decode("/" + subject)
 
     async def _get_json(self, relative_url: str) -> dict:
@@ -328,6 +352,7 @@ class AirQ:
 
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
+        _LOGGER.debug(f"{relative_url} returned {decoded_json_data}")
 
         return json.loads(decoded_json_data)
 
@@ -339,6 +364,7 @@ class AirQ:
 
         relative_url is expected to start with a slash."""
 
+        _LOGGER.debug(f"Posting {post_json_data} to {relative_url}")
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         post_data = "request=" + self.aes.encode(json.dumps(post_json_data))
 
@@ -350,6 +376,7 @@ class AirQ:
         ) as response:
             json_string = await response.text()
 
+        _LOGGER.debug(f"Received {json_string} from {relative_url}")
         try:
             json_data = json.loads(json_string)
         except json.JSONDecodeError as e:
@@ -361,6 +388,7 @@ class AirQ:
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
 
+        _LOGGER.debug(f"Decoded {json_string} from {relative_url}")
         response_decoded = json.loads(decoded_json_data)
         if isinstance(response_decoded, str) and response_decoded.startswith("Error"):
             _lookup_exception_from_firmware_response(response_decoded)

@@ -109,7 +109,7 @@ async def test_data_key_filtering(
                 "humidity": [63.0, 4.0],
                 "temperature": [18.9, 0.6],
             },
-            ["co", "o3"],
+            {"co", "o3"},
         ),
         (
             # The following is a strange looking data set but I have seen it.
@@ -125,7 +125,7 @@ async def test_data_key_filtering(
                 "co": [0.916, 0.22],
                 "o3": [27.17, 2.32],
             },
-            ["co", "o3"],
+            {"co", "o3"},
         ),
         (
             {
@@ -136,7 +136,7 @@ async def test_data_key_filtering(
                 "co": [0.92, 0.22],
                 "o3": [27.228, 2.31],
             },
-            [],
+            set(),
         ),
     ],
 )
@@ -168,7 +168,7 @@ def test_warmup_sensor_identification(data, expected):
                 "temperature": [17.9, 0.7],
             },
             ComparisonSummary(
-                warming_up=["co", "o3"],
+                warming_up={"co", "o3"},
                 difference={
                     "timestamp": 10_000,
                     "humidity": [1.0, 0.0],
@@ -197,7 +197,7 @@ def test_warmup_sensor_identification(data, expected):
                 "temperature": 17.9,
             },
             ComparisonSummary(
-                warming_up=["co", "o3"],
+                warming_up={"co", "o3"},
                 difference={"timestamp": 10_000, "humidity": 1.0, "temperature": -1.0},
             ),
         ),
@@ -222,7 +222,7 @@ def test_warmup_sensor_identification(data, expected):
             },
             ComparisonSummary(
                 missing_keys={"co", "o3"},
-                warming_up=["co", "o3"],
+                warming_up={"co", "o3"},
                 difference={
                     "timestamp": 50_000,
                     "humidity": [-4.0, 0.0],
@@ -250,7 +250,7 @@ def test_warmup_sensor_identification(data, expected):
             },
             ComparisonSummary(
                 missing_keys={"co", "o3"},
-                warming_up=["o3"],
+                warming_up={"o3"},
                 unaccountably_missing_keys={"co"},
                 difference={
                     "timestamp": 50_000,
@@ -279,7 +279,7 @@ def test_warmup_sensor_identification(data, expected):
             },
             ComparisonSummary(
                 missing_keys={"o3"},
-                warming_up=["o3"],
+                warming_up={"o3"},
                 new_values={"co": [0.9, 0.2]},
                 difference={
                     "timestamp": 50_000,
@@ -312,7 +312,7 @@ def test_warmup_sensor_identification(data, expected):
                 "o3": [27.3, 2.3],
             },
             ComparisonSummary(
-                warming_up=["co", "o3"],
+                warming_up={"co", "o3"},
                 new_values={"co": [0.9, 0.2], "o3": [27.3, 2.3]},
                 difference={"timestamp": 10_000, "humidity": 1.0, "temperature": -1.0},
             ),

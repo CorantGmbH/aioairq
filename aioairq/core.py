@@ -544,31 +544,59 @@ class AirQ:
         await self._post_json_and_decode("/config", post_json_data)
 
 
-def identify_warming_up_sensors(data: dict) -> list[str]:
+def identify_warming_up_sensors(data: dict) -> set[str]:
     """Based on the data, identify sensors that are still warming up.
 
     Convenience function that extracts a list of sensor names from the
     "Status" field.
     """
-    sensor_names = []
+    sensor_names = set()
     device_status: dict[str, str] | Literal["OK"] = data["Status"]
     if isinstance(device_status, dict):
         for sensor_name, sensor_status in device_status.items():
             if "sensor still in warm up phase" in sensor_status:
-                sensor_names.append(sensor_name)
+                sensor_names.add(sensor_name)
     return sensor_names
 
 
 @dataclass
 class ComparisonSummary:
+    """Class capturing the difference between two datasets fetched from AirQ.
+
+    Parameters
+    ----------
+    missing_keys : set[str]
+        Dictionary keys (sensor names) present in the previous data dictionary
+        but absent in the current.
+    warming_up : set[str]
+        Sensor names currently reported to undergo their warm up phases.
+        In normal operation, should be the same as `missing_keys`.
+    unaccountably_missing_keys : set[str]
+        Missing keys that do not correspond to sensors reported as warming up.
+        In normal operation, should be an empty set.
+    new_values : dict
+        Values from sensors that did not report in the previous data dictionary.
+    difference : dict
+        Differences between current and previous readings for sensors present
+        in both dictionaries. Indexed by sensor names.
+
+    Notes
+    -----
+    This class provides a structured way to track changes between two sequential
+    readings from AirQ sensors, helping identify missing, warming up, and changed
+    sensor values.
+    """
+
     missing_keys: set[str] = field(default_factory=set)
-    warming_up: list[str] = field(default_factory=list)
+    warming_up: set[str] = field(default_factory=set)
     unaccountably_missing_keys: set[str] = field(default_factory=set)
     new_values: dict = field(default_factory=dict)
     difference: dict = field(default_factory=dict)
 
     @classmethod
     def compare(cls, current: dict, previous: dict) -> "ComparisonSummary":
+        """Given two data dictionaries reported by AirQ, generate the comparison."""
+
         missing_keys = set(previous).difference(current)
         warming_up = identify_warming_up_sensors(current)
         unaccountably_missing_keys = missing_keys.difference(warming_up)
@@ -592,6 +620,10 @@ class ComparisonSummary:
         )
 
     def report(self):
+        """Log the comparison at DEBUG level.
+
+        Each field, if not empty, is reported in its own single record.
+        """
         if self.missing_keys:
             _LOGGER.debug("Compared to the prev data %s are missing", self.missing_keys)
         if self.warming_up:

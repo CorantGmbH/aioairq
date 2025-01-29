@@ -131,7 +131,6 @@ class AirQ:
         passw: str,
         session: aiohttp.ClientSession,
         timeout: float = 15,
-        verbose=False,
     ):
         """Class representing the API for a single AirQ device
 
@@ -152,9 +151,6 @@ class AirQ:
             before `aiohttp.ServerTimeoutError` is raised. Default: 15 seconds.
             Hitting the timeout be an indication that the device and the host are not
             on the same WiFi
-        verbose : bool
-            If True, `get_latest_data` stores the previous fetched data, compares
-            the current  against it, and logs the difference
         """
 
         self.address = address
@@ -162,7 +158,6 @@ class AirQ:
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
-        self.verbose = verbose
         self._previous_data = None
 
     async def has_api_access(self) -> bool:
@@ -301,7 +296,7 @@ class AirQ:
             data = self.drop_uncertainties_from_data(data)
         if not return_original_keys:
             data = {self._homogenise_key(key): value for key, value in data.items()}
-        if self.verbose:
+        if _LOGGER.isEnabledFor(logging.DEBUG):
             self._compare_to_previous(data)
             self._previous_data = data
         return data

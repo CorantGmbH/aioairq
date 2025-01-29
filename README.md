@@ -29,6 +29,9 @@ async def main():
 asyncio.run(main())
 ```
 
+## Logging
+Since version 0.4.4, `aioairq` supports a very verbose logging at the `DEBUG` level, especially in `AirQ.get_latest_data` method, which can cache the previous data and log the difference between the latest and the previous sensor readings. Note that this caching and difference calculation does not happen when the logging is set up to a higher level than `DEBUG`, incurring no additional overhead when not requested.
+
 ## Development
 
 Example script for Linux how to run everything.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+from dataclasses import dataclass, field
 from typing import Any, List, Literal, TypedDict
 
 import aiohttp
@@ -158,7 +159,7 @@ class AirQ:
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
-        self._previous_data = None
+        self._previous_data: dict = {}
 
     async def has_api_access(self) -> bool:
         return (await self.get_config())["APIaccess"]
@@ -300,40 +301,11 @@ class AirQ:
             self._compare_to_previous(data)
         return data
 
-    def _compare_to_previous(self, data) -> None:
-        if self._previous_data is None:
-            _LOGGER.debug("No previous data cached, initialting with the current")
+    def _compare_to_previous(self, data: dict) -> None:
+        if self._previous_data:
+            ComparisonSummary.compare(data, self._previous_data).report()
         else:
-            missing_keys = set(self._previous_data).difference(data)
-            if missing_keys:
-                _LOGGER.debug("Compared to the prev data %s are missing", missing_keys)
-            warming_up = self.identify_warming_up_sensors(data)
-            if warming_up:
-                _LOGGER.debug("%s are still warming up", warming_up)
-            if unaccountably_missing_keys := missing_keys.difference(warming_up):
-                _LOGGER.debug(
-                    "%s disappeared since the previous data and not warming up",
-                    unaccountably_missing_keys,
-                )
-
-            new_values = {}
-            diff = {}
-            for k, current in data.items():
-                if (previous := self._previous_data.get(k)) is None:
-                    new_values[k] = current
-                elif isinstance(current, (int, float)) and isinstance(
-                    previous, (int, float)
-                ):
-                    diff[k] = current - previous
-            if new_values:
-                _LOGGER.debug(
-                    "Since the previous fetch, following sensors started broadcasting: %s",
-                    new_values,
-                )
-            _LOGGER.debug(
-                "Difference since the previous fetch: %s",
-                diff,
-            )
+            _LOGGER.debug("No previous data cached, initialting with the current")
         self._previous_data = data
 
     def _homogenise_key(self, key: str) -> str:
@@ -571,20 +543,70 @@ class AirQ:
 
         await self._post_json_and_decode("/config", post_json_data)
 
-    @staticmethod
-    def identify_warming_up_sensors(data: dict) -> list[str]:
-        """Based on the data, identify sensors that are still warming up.
 
-        Convenience function that extracts a list of sensor names from the
-        "Status" field.
-        """
-        sensor_names = []
-        device_status: dict[str, str] | Literal["OK"] = data["Status"]
-        if isinstance(device_status, dict):
-            for sensor_name, sensor_status in device_status.items():
-                if "sensor still in warm up phase" in sensor_status:
-                    sensor_names.append(sensor_name)
-        return sensor_names
+def identify_warming_up_sensors(data: dict) -> list[str]:
+    """Based on the data, identify sensors that are still warming up.
+
+    Convenience function that extracts a list of sensor names from the
+    "Status" field.
+    """
+    sensor_names = []
+    device_status: dict[str, str] | Literal["OK"] = data["Status"]
+    if isinstance(device_status, dict):
+        for sensor_name, sensor_status in device_status.items():
+            if "sensor still in warm up phase" in sensor_status:
+                sensor_names.append(sensor_name)
+    return sensor_names
+
+
+@dataclass
+class ComparisonSummary:
+    missing_keys: set[str] = field(default_factory=set)
+    warming_up: list[str] = field(default_factory=list)
+    unaccountably_missing_keys: set[str] = field(default_factory=set)
+    new_values: dict = field(default_factory=dict)
+    difference: dict = field(default_factory=dict)
+
+    @classmethod
+    def compare(cls, current: dict, previous: dict) -> "ComparisonSummary":
+        missing_keys = set(previous).difference(current)
+        warming_up = identify_warming_up_sensors(current)
+        unaccountably_missing_keys = missing_keys.difference(warming_up)
+
+        new_values = {}
+        difference = {}
+        for k, curr in current.items():
+            if (prev := previous.get(k)) is None:
+                new_values[k] = curr
+            elif isinstance(curr, (int, float)) and isinstance(prev, (int, float)):
+                difference[k] = curr - prev
+            elif isinstance(curr, list) and isinstance(prev, list):
+                difference[k] = [c - p for c, p in zip(curr, prev)]
+
+        return cls(
+            missing_keys=missing_keys,
+            warming_up=warming_up,
+            unaccountably_missing_keys=unaccountably_missing_keys,
+            new_values=new_values,
+            difference=difference,
+        )
+
+    def report(self):
+        if self.missing_keys:
+            _LOGGER.debug("Compared to the prev data %s are missing", self.missing_keys)
+        if self.warming_up:
+            _LOGGER.debug("%s are still warming up", self.warming_up)
+        if self.unaccountably_missing_keys:
+            _LOGGER.debug(
+                "%s disappeared since the previous data and not warming up",
+                self.unaccountably_missing_keys,
+            )
+        if self.new_values:
+            _LOGGER.debug(
+                "Since the previous fetch, following sensors started broadcasting: %s",
+                self.new_values,
+            )
+        _LOGGER.debug("Difference since the previous fetch: %s", self.difference)
 
 
 def _lookup_exception_from_firmware_response(error_message: str):

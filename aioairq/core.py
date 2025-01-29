@@ -298,7 +298,6 @@ class AirQ:
             data = {self._homogenise_key(key): value for key, value in data.items()}
         if _LOGGER.isEnabledFor(logging.DEBUG):
             self._compare_to_previous(data)
-            self._previous_data = data
         return data
 
     def _compare_to_previous(self, data) -> None:
@@ -322,7 +321,9 @@ class AirQ:
             for k, current in data.items():
                 if (previous := self._previous_data.get(k)) is None:
                     new_values[k] = current
-                else:
+                elif isinstance(current, (int, float)) and isinstance(
+                    previous, (int, float)
+                ):
                     diff[k] = current - previous
             if new_values:
                 _LOGGER.debug(
@@ -331,8 +332,9 @@ class AirQ:
                 )
             _LOGGER.debug(
                 "Difference since the previous fetch: %s",
-                new_values,
+                diff,
             )
+        self._previous_data = data
 
     def _homogenise_key(self, key: str) -> str:
         """Meant to capture various changes to the original keys.

@@ -131,6 +131,7 @@ class AirQ:
         passw: str,
         session: aiohttp.ClientSession,
         timeout: float = 15,
+        verbose=False,
     ):
         """Class representing the API for a single AirQ device
 
@@ -151,6 +152,9 @@ class AirQ:
             before `aiohttp.ServerTimeoutError` is raised. Default: 15 seconds.
             Hitting the timeout be an indication that the device and the host are not
             on the same WiFi
+        verbose : bool
+            If True, `get_latest_data` stores the previous fetched data, compares
+            the current  against it, and logs the difference
         """
 
         self.address = address
@@ -158,6 +162,8 @@ class AirQ:
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
+        self.verbose = True
+        self._previous_data = None
 
     async def has_api_access(self) -> bool:
         return (await self.get_config())["APIaccess"]
@@ -262,7 +268,7 @@ class AirQ:
         clip_negative_values=True,
         return_uncertainties=False,
         return_original_keys=False,
-    ):
+    ) -> dict:
         """Poll the dictionary with the momentary values from the device.
 
         Parameters
@@ -295,7 +301,43 @@ class AirQ:
             data = self.drop_uncertainties_from_data(data)
         if not return_original_keys:
             data = {self._homogenise_key(key): value for key, value in data.items()}
+        if self.verbose:
+            self._compare_to_previous(data)
+            self._previous_data = data
         return data
+
+    def _compare_to_previous(self, data) -> None:
+        if self._previous_data is None:
+            _LOGGER.debug("No previous data cached, initialting with the current")
+        else:
+            missing_keys = set(self._previous_data).difference(data)
+            if missing_keys:
+                _LOGGER.debug("Compared to the prev data %s are missing", missing_keys)
+            warming_up = self.identify_warming_up_sensors(data)
+            if warming_up:
+                _LOGGER.debug("%s are still warming up", warming_up)
+            if unaccountably_missing_keys := missing_keys.difference(warming_up):
+                _LOGGER.debug(
+                    "%s disappeared since the previous data and not warming up",
+                    unaccountably_missing_keys,
+                )
+
+            new_values = {}
+            diff = {}
+            for k, current in data.items:
+                if (previous := self._previous_data.get(k)) is None:
+                    new_values[k] = current
+                else:
+                    diff[k] = current - previous
+            if new_values:
+                _LOGGER.debug(
+                    "Since the previous fetch, following sensors started broadcasting: %s",
+                    new_values,
+                )
+            _LOGGER.debug(
+                "Difference since the previous fetch: %s",
+                new_values,
+            )
 
     def _homogenise_key(self, key: str) -> str:
         """Meant to capture various changes to the original keys.
@@ -531,6 +573,21 @@ class AirQ:
         }
 
         await self._post_json_and_decode("/config", post_json_data)
+
+    @staticmethod
+    def identify_warming_up_sensors(data: dict) -> list[str]:
+        """Based on the data, identify sensors that are still warming up.
+
+        Convenience function that extracts a list of sensor names from the
+        "Status" field.
+        """
+        sensor_names = []
+        device_status: dict[str, str] | Literal["OK"] = data["Status"]
+        if isinstance(device_status, dict):
+            for sensor_name, sensor_status in device_status.items():
+                if "sensor still in warm up phase" in sensor_status:
+                    sensor_names.append(sensor_name)
+        return sensor_names
 
 
 def _lookup_exception_from_firmware_response(error_message: str):

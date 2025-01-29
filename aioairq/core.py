@@ -1,7 +1,9 @@
 from __future__ import annotations
 
-import re
 import json
+import logging
+import re
+from dataclasses import dataclass, field
 from typing import Any, List, Literal, TypedDict
 
 import aiohttp
@@ -14,6 +16,8 @@ from aioairq.exceptions import (
     InvalidIpAddress,
 )
 from aioairq.utils import is_valid_ipv4_address
+
+_LOGGER = logging.getLogger(__name__)
 
 LedThemeName = Literal[
     "standard",
@@ -155,6 +159,7 @@ class AirQ:
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
+        self._previous_data: dict = {}
 
     async def has_api_access(self) -> bool:
         return (await self.get_config())["APIaccess"]
@@ -166,6 +171,7 @@ class AirQ:
         This function can be used to identify a device, when you have multiple devices.
         """
         json_data = await self._get_json("/blink")
+        _LOGGER.debug("Received the blink command")
 
         return json_data["id"]
 
@@ -176,17 +182,20 @@ class AirQ:
         This is merely a convenience function, relying on the exception being
         raised down the stack (namely by AESCipher.decode from within self.get)
         """
+        _LOGGER.debug("Checking the access to the device")
         await self.get("ping")
 
     async def restart(self) -> None:
         """Restarts the device."""
         post_json_data = {"reset": True}
+        _LOGGER.info("Received the restart command")
 
         await self._post_json_and_decode("/config", post_json_data)
 
     async def shutdown(self) -> None:
         """Shuts the device down."""
         post_json_data = {"shutdown": True}
+        _LOGGER.info("Received the shutdown command")
 
         await self._post_json_and_decode("/config", post_json_data)
 
@@ -195,6 +204,7 @@ class AirQ:
 
     async def fetch_device_info(self) -> DeviceInfo:
         """Fetch condensed device description"""
+        _LOGGER.debug("Fetching device info")
         config: dict = await self.get("config")
         room_type = config.get("RoomType")
 
@@ -204,7 +214,7 @@ class AirQ:
         except KeyError as e:
             raise InvalidAirQResponse from e
 
-        return DeviceInfo(
+        device_info = DeviceInfo(
             id=device_id,
             name=config.get("devicename"),
             model=config.get("type"),
@@ -212,6 +222,8 @@ class AirQ:
             sw_version=config.get("air-Q-Software-Version"),
             hw_version=config.get("air-Q-Hardware-Version"),
         )
+        _LOGGER.debug("Fetched device_info %s", device_info)
+        return device_info
 
     @staticmethod
     def drop_uncertainties_from_data(data: dict) -> dict:
@@ -230,15 +242,21 @@ class AirQ:
 
     @staticmethod
     def clip_negative_values(data: dict) -> dict:
-        def clip(value):
+        _msg_template = "clipping value for %s: %.2f -> 0.0"
+
+        def clip(key: str, value):
             if isinstance(value, list):
+                if value[0] < 0:
+                    _LOGGER.debug(_msg_template, key, value[0])
                 return [max(0, value[0]), value[1]]
             if isinstance(value, (float, int)):
+                if value < 0:
+                    _LOGGER.debug(_msg_template, key, value)
                 return max(0, value)
 
             return value
 
-        return {k: clip(v) for k, v in data.items()}
+        return {k: clip(k, v) for k, v in data.items()}
 
     async def get_latest_data(
         self,
@@ -246,7 +264,7 @@ class AirQ:
         clip_negative_values=True,
         return_uncertainties=False,
         return_original_keys=False,
-    ):
+    ) -> dict:
         """Poll the dictionary with the momentary values from the device.
 
         Parameters
@@ -268,14 +286,27 @@ class AirQ:
             structure of the returned dict.
         """
 
-        data = await self.get("average" if return_average else "data")
+        route = "average" if return_average else "data"
+        _LOGGER.debug("Fetching from %s", route)
+        data = await self.get(route)
         if clip_negative_values:
+            _LOGGER.debug("Clippig negative values")
             data = self.clip_negative_values(data)
         if not return_uncertainties:
+            _LOGGER.debug("Dropping uncertainties")
             data = self.drop_uncertainties_from_data(data)
         if not return_original_keys:
             data = {self._homogenise_key(key): value for key, value in data.items()}
+        if _LOGGER.isEnabledFor(logging.DEBUG):
+            self._compare_to_previous(data)
         return data
+
+    def _compare_to_previous(self, data: dict) -> None:
+        if self._previous_data:
+            ComparisonSummary.compare(data, self._previous_data).report()
+        else:
+            _LOGGER.debug("No previous data cached, initialting with the current")
+        self._previous_data = data
 
     def _homogenise_key(self, key: str) -> str:
         """Meant to capture various changes to the original keys.
@@ -284,7 +315,10 @@ class AirQ:
         values from a new sensor, allowing all PM values to appear under the same keys
         disregarding the underlying sensor configuration.
         """
-        return key.replace("_SPS30", "")
+        _SUFFIX = "_SPS30"
+        if _SUFFIX in key:
+            _LOGGER.debug("Dropping %s from %s", _SUFFIX, key)
+        return key.replace(_SUFFIX, "")
 
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device.
@@ -297,6 +331,7 @@ class AirQ:
                 f"a dict with a key 'content' (namely {self._supported_routes})."
             )
 
+        _LOGGER.debug("Fetching from %s", subject)
         return await self._get_json_and_decode("/" + subject)
 
     async def _get_json(self, relative_url: str) -> dict:
@@ -328,6 +363,7 @@ class AirQ:
 
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
+        _LOGGER.debug("%s returned %s", relative_url, decoded_json_data)
 
         return json.loads(decoded_json_data)
 
@@ -339,8 +375,10 @@ class AirQ:
 
         relative_url is expected to start with a slash."""
 
+        post_json_data_str = json.dumps(post_json_data)
+        _LOGGER.debug("Posting %s to %s", post_json_data_str, relative_url)
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        post_data = "request=" + self.aes.encode(json.dumps(post_json_data))
+        post_data = "request=" + self.aes.encode(post_json_data_str)
 
         async with self._session.post(
             f"{self.anchor}{relative_url}",
@@ -350,6 +388,7 @@ class AirQ:
         ) as response:
             json_string = await response.text()
 
+        _LOGGER.debug("Received %s from %s", json_string, relative_url)
         try:
             json_data = json.loads(json_string)
         except json.JSONDecodeError as e:
@@ -361,6 +400,7 @@ class AirQ:
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
 
+        _LOGGER.debug("Decoded %s from %s", json_string, relative_url)
         response_decoded = json.loads(decoded_json_data)
         if isinstance(response_decoded, str) and response_decoded.startswith("Error"):
             _lookup_exception_from_firmware_response(response_decoded)
@@ -502,6 +542,103 @@ class AirQ:
         }
 
         await self._post_json_and_decode("/config", post_json_data)
+
+
+def identify_warming_up_sensors(data: dict) -> set[str]:
+    """Based on the data, identify sensors that are still warming up.
+
+    Convenience function that extracts a list of sensor names from the
+    "Status" field.
+    """
+    sensor_names = set()
+    device_status: dict[str, str] | Literal["OK"] = data["Status"]
+    if isinstance(device_status, dict):
+        for sensor_name, sensor_status in device_status.items():
+            if "sensor still in warm up phase" in sensor_status:
+                sensor_names.add(sensor_name)
+    return sensor_names
+
+
+@dataclass
+class ComparisonSummary:
+    """Class capturing the difference between two datasets fetched from AirQ.
+
+    Parameters
+    ----------
+    missing_keys : set[str]
+        Dictionary keys (sensor names) present in the previous data dictionary
+        but absent in the current.
+    warming_up : set[str]
+        Sensor names currently reported to undergo their warm up phases.
+        In normal operation, should be the same as `missing_keys`.
+    unaccountably_missing_keys : set[str]
+        Missing keys that do not correspond to sensors reported as warming up.
+        In normal operation, should be an empty set.
+    new_values : dict
+        Values from sensors that did not report in the previous data dictionary.
+    difference : dict
+        Differences between current and previous readings for sensors present
+        in both dictionaries. Indexed by sensor names.
+
+    Notes
+    -----
+    This class provides a structured way to track changes between two sequential
+    readings from AirQ sensors, helping identify missing, warming up, and changed
+    sensor values.
+    """
+
+    missing_keys: set[str] = field(default_factory=set)
+    warming_up: set[str] = field(default_factory=set)
+    unaccountably_missing_keys: set[str] = field(default_factory=set)
+    new_values: dict = field(default_factory=dict)
+    difference: dict = field(default_factory=dict)
+
+    @classmethod
+    def compare(cls, current: dict, previous: dict) -> "ComparisonSummary":
+        """Given two data dictionaries reported by AirQ, generate the comparison."""
+
+        missing_keys = set(previous).difference(current)
+        warming_up = identify_warming_up_sensors(current)
+        unaccountably_missing_keys = missing_keys.difference(warming_up)
+
+        new_values = {}
+        difference = {}
+        for k, curr in current.items():
+            if (prev := previous.get(k)) is None:
+                new_values[k] = curr
+            elif isinstance(curr, (int, float)) and isinstance(prev, (int, float)):
+                difference[k] = curr - prev
+            elif isinstance(curr, list) and isinstance(prev, list):
+                difference[k] = [c - p for c, p in zip(curr, prev)]
+
+        return cls(
+            missing_keys=missing_keys,
+            warming_up=warming_up,
+            unaccountably_missing_keys=unaccountably_missing_keys,
+            new_values=new_values,
+            difference=difference,
+        )
+
+    def report(self):
+        """Log the comparison at DEBUG level.
+
+        Each field, if not empty, is reported in its own single record.
+        """
+        if self.missing_keys:
+            _LOGGER.debug("Compared to the prev data %s are missing", self.missing_keys)
+        if self.warming_up:
+            _LOGGER.debug("%s are still warming up", self.warming_up)
+        if self.unaccountably_missing_keys:
+            _LOGGER.debug(
+                "%s disappeared since the previous data and not warming up",
+                self.unaccountably_missing_keys,
+            )
+        if self.new_values:
+            _LOGGER.debug(
+                "Since the previous fetch, following sensors started broadcasting: %s",
+                self.new_values,
+            )
+        _LOGGER.debug("Difference since the previous fetch: %s", self.difference)
 
 
 def _lookup_exception_from_firmware_response(error_message: str):

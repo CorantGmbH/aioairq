@@ -162,7 +162,7 @@ class AirQ:
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(connect=timeout)
-        self.verbose = True
+        self.verbose = verbose
         self._previous_data = None
 
     async def has_api_access(self) -> bool:
@@ -324,7 +324,7 @@ class AirQ:
 
             new_values = {}
             diff = {}
-            for k, current in data.items:
+            for k, current in data.items():
                 if (previous := self._previous_data.get(k)) is None:
                     new_values[k] = current
                 else:

@@ -220,7 +220,7 @@ class AirQ:
             sw_version=config.get("air-Q-Software-Version"),
             hw_version=config.get("air-Q-Hardware-Version"),
         )
-        _LOGGER.debug(f"Fetched {device_info=}")
+        _LOGGER.debug("Fetched device_info %s", device_info)
         return device_info
 
     @staticmethod
@@ -240,16 +240,16 @@ class AirQ:
 
     @staticmethod
     def clip_negative_values(data: dict) -> dict:
-        _msg_template = "clipping value for {key}: {value} -> 0.0"
+        _msg_template = "clipping value for %s: %.2f -> 0.0"
 
         def clip(key: str, value):
             if isinstance(value, list):
                 if value[0] < 0:
-                    _LOGGER.debug(_msg_template.format(key=key, value=value[0]))
+                    _LOGGER.debug(_msg_template, key, value[0])
                 return [max(0, value[0]), value[1]]
             if isinstance(value, (float, int)):
                 if value < 0:
-                    _LOGGER.debug(_msg_template.format(key=key, value=value))
+                    _LOGGER.debug(_msg_template, key, value)
                 return max(0, value)
 
             return value
@@ -285,7 +285,7 @@ class AirQ:
         """
 
         route = "average" if return_average else "data"
-        _LOGGER.debug(f"Fetching from {route}")
+        _LOGGER.debug("Fetching from %s", route)
         data = await self.get(route)
         if clip_negative_values:
             _LOGGER.debug("Clippig negative values")
@@ -306,7 +306,7 @@ class AirQ:
         """
         _SUFFIX = "_SPS30"
         if _SUFFIX in key:
-            _LOGGER.debug(f"Dropping {_SUFFIX} from {key}")
+            _LOGGER.debug("Dropping %s from %s", _SUFFIX, key)
         return key.replace(_SUFFIX, "")
 
     async def get(self, subject: str) -> dict:
@@ -320,7 +320,7 @@ class AirQ:
                 f"a dict with a key 'content' (namely {self._supported_routes})."
             )
 
-        _LOGGER.debug(f"Fetching from {subject}")
+        _LOGGER.debug("Fetching from %s", subject)
         return await self._get_json_and_decode("/" + subject)
 
     async def _get_json(self, relative_url: str) -> dict:
@@ -352,7 +352,7 @@ class AirQ:
 
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
-        _LOGGER.debug(f"{relative_url} returned {decoded_json_data}")
+        _LOGGER.debug("%s returned %s", relative_url, decoded_json_data)
 
         return json.loads(decoded_json_data)
 
@@ -364,9 +364,10 @@ class AirQ:
 
         relative_url is expected to start with a slash."""
 
-        _LOGGER.debug(f"Posting {post_json_data} to {relative_url}")
+        post_json_data_str = json.dumps(post_json_data)
+        _LOGGER.debug("Posting %s to %s", post_json_data_str, relative_url)
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
-        post_data = "request=" + self.aes.encode(json.dumps(post_json_data))
+        post_data = "request=" + self.aes.encode(post_json_data_str)
 
         async with self._session.post(
             f"{self.anchor}{relative_url}",
@@ -376,7 +377,7 @@ class AirQ:
         ) as response:
             json_string = await response.text()
 
-        _LOGGER.debug(f"Received {json_string} from {relative_url}")
+        _LOGGER.debug("Received %s from %s", json_string, relative_url)
         try:
             json_data = json.loads(json_string)
         except json.JSONDecodeError as e:
@@ -388,7 +389,7 @@ class AirQ:
         encoded_message = json_data["content"]
         decoded_json_data = self.aes.decode(encoded_message)
 
-        _LOGGER.debug(f"Decoded {json_string} from {relative_url}")
+        _LOGGER.debug("Decoded %s from %s", json_string, relative_url)
         response_decoded = json.loads(decoded_json_data)
         if isinstance(response_decoded, str) and response_decoded.startswith("Error"):
             _lookup_exception_from_firmware_response(response_decoded)

@@ -9,13 +9,15 @@ import re
 import aiohttp
 import pytest
 import pytest_asyncio
-
 from aioairq import AirQ, DeviceLedTheme, DeviceLedThemePatch, NightMode
 from aioairq.exceptions import APIAccessDenied
+from aioairq.utils import is_time_in_interval
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
 HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "")
+BR_SET = {"brightness_day": 5, "brightness_night": 0}
+BR_NEW = {"brightness_day": 6, "brightness_night": 1}
 
 
 @pytest_asyncio.fixture()
@@ -223,7 +225,7 @@ async def test_night_mode(airq):
         activated=True,
         start_day="03:47",
         start_night="19:12",
-        brightness_day=19.7,
+        brightness_day=9.7,
         brightness_night=2.3,
         fan_night_off=True,
         wifi_night_off=False,  # Hint: Don't disable Wi-Fi when testing ;-)
@@ -236,7 +238,7 @@ async def test_night_mode(airq):
         activated=False,
         start_day="00:00",
         start_night="23:59",
-        brightness_day=17.0,
+        brightness_day=7.0,
         brightness_night=4.7,
         fan_night_off=False,
         wifi_night_off=True,
@@ -251,3 +253,91 @@ async def test_night_mode(airq):
     assert values_after_change1 == new_values1
     assert values_after_change2 == new_values2
     assert values_after_reset == previous_values
+
+
+@pytest_asyncio.fixture(params=[True, False])
+async def airq_automatically_restoring_night_mode(airq, request):
+    # Store the original
+    previous_night_mode = await airq.get_night_mode()
+
+    # Pre-configure
+    night_mode_activated = request.param
+    await airq.set_night_mode(
+        previous_night_mode | BR_SET | {"activated": night_mode_activated}
+    )
+
+    yield airq
+
+    await airq.set_night_mode(previous_night_mode)
+    restored_night_mode = await airq.get_night_mode()
+    assert restored_night_mode == previous_night_mode
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "targets",
+    [["default"], ["night"], ["default", "night"]],
+)
+async def test_setting_brightness_config(
+    airq_automatically_restoring_night_mode: AirQ, targets: list[str]
+):
+    _key_map = {"default": "brightness_day", "night": "brightness_night"}
+    previous_night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
+    # the foolowing is the dictionary to be passed to set_brightness_config
+    # and thus has default and/or night as keys
+    requested_brightness_config = {
+        target: BR_NEW[_key_map[target]] for target in targets
+    }
+    # ...while this dict "patch" needs to have different keys,
+    # i.e. brightness_{day,night}
+    expected_night_mode = previous_night_mode | {
+        _key_map[target]: BR_NEW[_key_map[target]] for target in targets
+    }
+
+    await airq_automatically_restoring_night_mode.set_brightness_config(
+        **requested_brightness_config
+    )
+    updated_night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
+    assert updated_night_mode == expected_night_mode
+
+
+@pytest.mark.asyncio
+async def test_setting_current_brightness(
+    airq_automatically_restoring_night_mode: AirQ,
+):
+    br: float = await airq_automatically_restoring_night_mode.get_current_brightness()
+    br_new = (br + 1) % 10
+    await airq_automatically_restoring_night_mode.set_current_brightness(br_new)
+    night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
+
+    if night_mode["activated"] and is_time_in_interval(
+        start=night_mode["start_night"], end=night_mode["start_day"]
+    ):
+        target_key = "brightness_night"
+    else:
+        target_key = "brightness_day"
+    assert night_mode[target_key] == br_new
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [-1, 11, "5.0"])
+async def test_setting_current_brightness_wrongly(
+    airq_automatically_restoring_night_mode: AirQ, value
+):
+    with pytest.raises(ValueError):
+        await airq_automatically_restoring_night_mode.set_current_brightness(value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("value", [-1, 11, "5.0"])
+@pytest.mark.parametrize(
+    "targets",
+    [["default"], ["night"], ["default", "night"]],
+)
+async def test_setting_brightness_config_wrongly(
+    airq_automatically_restoring_night_mode: AirQ, value, targets
+):
+    with pytest.raises(ValueError):
+        await airq_automatically_restoring_night_mode.set_brightness_config(
+            **{target: value for target in targets}
+        )

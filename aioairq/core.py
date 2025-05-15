@@ -15,7 +15,7 @@ from aioairq.exceptions import (
     InvalidAirQResponse,
     InvalidIpAddress,
 )
-from aioairq.utils import is_valid_ipv4_address
+from aioairq.utils import is_time_in_interval, is_valid_ipv4_address
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -73,6 +73,11 @@ class DeviceLedThemePatch(TypedDict, total=False):
     right: LedThemeName
 
 
+class Brightness(TypedDict):
+    default: float
+    night: float | None
+
+
 class NightMode(TypedDict):
     """Container holding night mode configuration"""
 
@@ -87,18 +92,14 @@ class NightMode(TypedDict):
 
     brightness_day: float
     """LED brightness outside of night mode.
-    
-    Note:
-    Official docs say valid range is 2.2 to 20.0.
-    The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
+
+    The valid range is 0.0 (off) to 10.0 (max).
     """
 
     brightness_night: float
     """LED brightness during night mode.
     
-    Note:
-    Official docs say valid range is 2.2 to 20.0.
-    The valid range seems more like 1.0 to 10.0. With 0 the LEDs can be turned off completely.
+    The valid range is 0.0 (off) to 10.0 (max).
     """
 
     fan_night_off: bool
@@ -544,6 +545,65 @@ class AirQ:
         await self._post_json_and_decode("/config", post_json_data)
 
 
+    async def get_brightness_config(self) -> Brightness:
+        night_mode = await self.get_night_mode()
+
+        return Brightness(
+            default=night_mode["brightness_day"],
+            night=night_mode["brightness_night"],
+        )
+
+    async def set_brightness_config(
+        self, default: float | None = None, night: float | None = None
+    ) -> None:
+        if not isinstance(default, (int, float, type(None))):
+            raise ValueError(f"Unsupported {type(default)=}")
+        if not isinstance(night, (int, float, type(None))):
+            raise ValueError(f"Unsupported {type(night)=}")
+        if default is not None and ((default < 0) or (default > 10)):
+            raise ValueError(f"if given, default must be in [0, 10] got {default}")
+        if night is not None and ((night < 0) or (night > 10)):
+            raise ValueError(f"if given, night must be in [0, 10] got {night}")
+
+        current_night_mode = await self.get_night_mode()
+        post_json_data = {
+            "NightMode": {
+                "Activated": current_night_mode["activated"],
+                "StartDay": current_night_mode["start_day"],
+                "StartNight": current_night_mode["start_night"],
+                "BrightnessDay": default
+                if default is not None
+                else current_night_mode["brightness_day"],
+                "BrightnessNight": night
+                if night is not None
+                else current_night_mode["brightness_night"],
+                "FanNightOff": current_night_mode["fan_night_off"],
+                "WifiNightOff": current_night_mode["wifi_night_off"],
+                "AlarmNightOff": current_night_mode["alarm_night_off"],
+            }
+        }
+
+        await self._post_json_and_decode("/config", post_json_data)
+
+    async def get_current_brightness(self) -> float:
+        night_mode = await self.get_night_mode()
+        return night_mode[_select_current_brightness_key(night_mode)]
+
+    async def set_current_brightness(self, value: float) -> None:
+        if not isinstance(value, (int, float)):
+            raise ValueError(f"Unsupported {type(value)=}")
+        if value < 0 or value > 10:
+            raise ValueError(f"Unsupported brightness {value=}, must be in [0, 10]")
+
+        night_mode = await self.get_night_mode()
+        target_key = _select_current_brightness_key(night_mode)
+
+        if night_mode[target_key] == value:
+            # spare a round of communication to the device if nothing needs changing
+            return
+
+        await self.set_night_mode(night_mode | {target_key: value})
+
 def identify_warming_up_sensors(data: dict) -> set[str]:
     """Based on the data, identify sensors that are still warming up.
 
@@ -654,3 +714,15 @@ def _lookup_exception_from_firmware_response(error_message: str):
         raise APIAccessDenied(m.groupdict()["message"])
     else:
         raise APIAccessError(error_message)
+
+
+def _select_current_brightness_key(
+    night_mode: NightMode,
+) -> Literal["brightness_day", "brightness_night"]:
+    if night_mode["activated"] and is_time_in_interval(
+        start=night_mode["start_night"], end=night_mode["start_day"]
+    ):
+        target_key = "brightness_night"
+    else:
+        target_key = "brightness_day"
+    return target_key

@@ -74,6 +74,8 @@ class DeviceLedThemePatch(TypedDict, total=False):
 
 
 class Brightness(TypedDict):
+    """LED brightness in %"""
+
     default: float
     night: float | None
 
@@ -91,16 +93,10 @@ class NightMode(TypedDict):
     """Start time of night mode in format 'HH:mm'. Note that the time is in UTC."""
 
     brightness_day: float
-    """LED brightness outside of night mode.
-
-    The valid range is 0.0 (off) to 10.0 (max).
-    """
+    """LED brightness (in percent) outside of night mode."""
 
     brightness_night: float
-    """LED brightness during night mode.
-    
-    The valid range is 0.0 (off) to 10.0 (max).
-    """
+    """LED brightness (in percent) during night mode."""
 
     fan_night_off: bool
     """Whether the fans are turned off during night mode.
@@ -521,8 +517,8 @@ class AirQ:
             activated=night_mode["Activated"],
             start_day=night_mode["StartDay"],
             start_night=night_mode["StartNight"],
-            brightness_day=night_mode["BrightnessDay"],
-            brightness_night=night_mode["BrightnessNight"],
+            brightness_day=night_mode["BrightnessDay"] * 10.0,
+            brightness_night=night_mode["BrightnessNight"] * 10.0,
             fan_night_off=night_mode["FanNightOff"],
             wifi_night_off=night_mode["WifiNightOff"],
             alarm_night_off=night_mode["AlarmNightOff"],
@@ -534,8 +530,8 @@ class AirQ:
                 "Activated": night_mode["activated"],
                 "StartDay": night_mode["start_day"],
                 "StartNight": night_mode["start_night"],
-                "BrightnessDay": night_mode["brightness_day"],
-                "BrightnessNight": night_mode["brightness_night"],
+                "BrightnessDay": night_mode["brightness_day"] / 10.0,
+                "BrightnessNight": night_mode["brightness_night"] / 10.0,
                 "FanNightOff": night_mode["fan_night_off"],
                 "WifiNightOff": night_mode["wifi_night_off"],
                 "AlarmNightOff": night_mode["alarm_night_off"],
@@ -543,7 +539,6 @@ class AirQ:
         }
 
         await self._post_json_and_decode("/config", post_json_data)
-
 
     async def get_brightness_config(self) -> Brightness:
         night_mode = await self.get_night_mode()
@@ -560,40 +555,37 @@ class AirQ:
             raise ValueError(f"Unsupported {type(default)=}")
         if not isinstance(night, (int, float, type(None))):
             raise ValueError(f"Unsupported {type(night)=}")
-        if default is not None and ((default < 0) or (default > 10)):
-            raise ValueError(f"if given, default must be in [0, 10] got {default}")
+        if default is not None and ((default < 0) or (default > 100)):
+            raise ValueError(f"if given, default must be in [0, 100] got {default}")
         if night is not None and ((night < 0) or (night > 10)):
             raise ValueError(f"if given, night must be in [0, 10] got {night}")
 
         current_night_mode = await self.get_night_mode()
-        post_json_data = {
-            "NightMode": {
-                "Activated": current_night_mode["activated"],
-                "StartDay": current_night_mode["start_day"],
-                "StartNight": current_night_mode["start_night"],
-                "BrightnessDay": default
-                if default is not None
-                else current_night_mode["brightness_day"],
-                "BrightnessNight": night
-                if night is not None
-                else current_night_mode["brightness_night"],
-                "FanNightOff": current_night_mode["fan_night_off"],
-                "WifiNightOff": current_night_mode["wifi_night_off"],
-                "AlarmNightOff": current_night_mode["alarm_night_off"],
-            }
-        }
-
-        await self._post_json_and_decode("/config", post_json_data)
+        if default is not None:
+            current_night_mode.update({"brightness_day": default})
+        if night is not None:
+            current_night_mode.update({"brightness_night": night})
+        await self.set_night_mode(current_night_mode)
 
     async def get_current_brightness(self) -> float:
+        """Get current LED brightness in %.
+
+        This function automatically checks if the night mode is activated
+        and fetches the correct brightness.
+        """
         night_mode = await self.get_night_mode()
         return night_mode[_select_current_brightness_key(night_mode)]
 
     async def set_current_brightness(self, value: float) -> None:
+        """Set current LED brightness to the desired value in %.
+
+        This function automatically checks if the night mode is activated
+        and configures the correct brightness based on the time of the day.
+        """
         if not isinstance(value, (int, float)):
             raise ValueError(f"Unsupported {type(value)=}")
-        if value < 0 or value > 10:
-            raise ValueError(f"Unsupported brightness {value=}, must be in [0, 10]")
+        if value < 0 or value > 100:
+            raise ValueError(f"Unsupported brightness {value=}, must be in [0, 100]")
 
         night_mode = await self.get_night_mode()
         target_key = _select_current_brightness_key(night_mode)
@@ -603,6 +595,7 @@ class AirQ:
             return
 
         await self.set_night_mode(night_mode | {target_key: value})
+
 
 def identify_warming_up_sensors(data: dict) -> set[str]:
     """Based on the data, identify sensors that are still warming up.

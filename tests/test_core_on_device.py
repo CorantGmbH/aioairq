@@ -16,8 +16,8 @@ from aioairq.utils import is_time_in_interval
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
 HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "")
-BR_SET = {"brightness_day": 5, "brightness_night": 0}
-BR_NEW = {"brightness_day": 6, "brightness_night": 1}
+BR_SET = {"brightness_day": 50, "brightness_night": 0}
+BR_NEW = {"brightness_day": 60, "brightness_night": 10}
 
 
 @pytest_asyncio.fixture()
@@ -225,8 +225,8 @@ async def test_night_mode(airq):
         activated=True,
         start_day="03:47",
         start_night="19:12",
-        brightness_day=9.7,
-        brightness_night=2.3,
+        brightness_day=97,
+        brightness_night=23,
         fan_night_off=True,
         wifi_night_off=False,  # Hint: Don't disable Wi-Fi when testing ;-)
         alarm_night_off=True,
@@ -238,8 +238,8 @@ async def test_night_mode(airq):
         activated=False,
         start_day="00:00",
         start_night="23:59",
-        brightness_day=7.0,
-        brightness_night=4.7,
+        brightness_day=70,
+        brightness_night=47,
         fan_night_off=False,
         wifi_night_off=True,
         alarm_night_off=False,
@@ -306,7 +306,7 @@ async def test_setting_current_brightness(
     airq_automatically_restoring_night_mode: AirQ,
 ):
     br: float = await airq_automatically_restoring_night_mode.get_current_brightness()
-    br_new = (br + 1) % 10
+    br_new = (br + 1) % 100
     await airq_automatically_restoring_night_mode.set_current_brightness(br_new)
     night_mode = await airq_automatically_restoring_night_mode.get_night_mode()
 
@@ -320,7 +320,7 @@ async def test_setting_current_brightness(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", [-1, 11, "5.0"])
+@pytest.mark.parametrize("value", [-1, 110, "5.0"])
 async def test_setting_current_brightness_wrongly(
     airq_automatically_restoring_night_mode: AirQ, value
 ):
@@ -329,7 +329,7 @@ async def test_setting_current_brightness_wrongly(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("value", [-1, 11, "5.0"])
+@pytest.mark.parametrize("value", [-1, 110, "5.0"])
 @pytest.mark.parametrize(
     "targets",
     [["default"], ["night"], ["default", "night"]],

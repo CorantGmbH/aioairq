@@ -155,7 +155,7 @@ class AirQ:
         self.anchor = "http://" + self.address
         self.aes = AESCipher(passw)
         self._session = session
-        self._timeout = aiohttp.ClientTimeout(connect=timeout)
+        self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._previous_data: dict = {}
 
     async def has_api_access(self) -> bool:

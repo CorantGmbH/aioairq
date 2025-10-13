@@ -1,13 +1,18 @@
-from unittest.mock import patch
+import asyncio
+import time
 from dataclasses import asdict
+from math import isclose
+from unittest.mock import patch
 
 import aiohttp
 import pytest
 import pytest_asyncio
-from pytest import fixture, approx
+from pytest import approx, fixture
 
 from aioairq import AirQ
-from aioairq.core import identify_warming_up_sensors, ComparisonSummary
+from aioairq.core import ComparisonSummary, identify_warming_up_sensors
+
+TIMEOUT_MAX = 5
 
 
 @fixture
@@ -351,3 +356,60 @@ def test_data_comparison(previous, current, expected):
     assert actual_dict == expected_dict
     for sensor_name, actual_diff in actual_difference.items():
         assert actual_diff == approx(expected_difference[sensor_name])
+
+
+@pytest_asyncio.fixture
+async def hanging_server():
+    """
+    TCP server that accepts connections but never sends data.
+    This makes HTTP clients wait forever for the status line / headers.
+    """
+    hang_for_seconds = TIMEOUT_MAX * 10
+
+    async def handler(reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+        try:
+            # Keep the connection open; don't read or write HTTP data.
+            await asyncio.sleep(hang_for_seconds)
+        finally:
+            try:
+                # Ask asyncio to close the underlying transport...
+                writer.close()
+                # ...then wait for it to do so
+                await writer.wait_closed()
+                # Also, ignore any possible edge case during this teardown
+            except Exception:
+                pass
+
+    # pick any free ephemeral port on localhost and bind the server to it
+    server = await asyncio.start_server(handler, host="127.0.0.1", port=0)
+    # get the actual selected port
+    port = server.sockets[0].getsockname()[1]
+    try:
+        yield ("127.0.0.1", port)
+    finally:
+        server.close()
+        server.wait_closed()
+
+
+@pytest.mark.asyncio
+async def test_hanging_response_triggers_total_timeout(hanging_server, session):
+    """Test that AirQ respects its timeout when querying a hanging server.
+
+    Hanging server will acknowledge the connection but won't respond to read request.
+    This test checks that the airq respects the timeout that was specified to it.
+    """
+
+    timeout_expected = TIMEOUT_MAX / 10
+    host, port = hanging_server
+    airq = AirQ(f"{host}:{port}", "dummy_password", session, timeout=timeout_expected)
+
+    started = time.perf_counter()
+
+    with pytest.raises(asyncio.TimeoutError):
+        await asyncio.wait_for(airq.get("ping"), TIMEOUT_MAX)
+
+    elapsed = time.perf_counter() - started
+
+    assert isclose(
+        elapsed, timeout_expected, abs_tol=0.1, rel_tol=0.1
+    ), f"Elapsed {elapsed:.3f}s suggests no read/total timeout was enforced"

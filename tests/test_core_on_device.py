@@ -15,6 +15,8 @@ from aioairq.utils import is_time_in_interval
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
+DEVID = os.environ.get("AIRQ_DEVID", "abcd1")
+MDNS = f"{DEVID}_air-q.local"
 HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "")
 BR_SET = {"brightness_day": 50, "brightness_night": 0}
 BR_NEW = {"brightness_day": 60, "brightness_night": 10}
@@ -27,9 +29,10 @@ async def session():
     await session.close()
 
 
-@pytest_asyncio.fixture()
-async def airq(session):
-    return AirQ(IP, PASS, session, timeout=5)
+@pytest_asyncio.fixture(params=["ip", "mdns", "devid"])
+async def airq(session, request):
+    address = {"ip": IP, "mdns": MDNS, "devid": DEVID}[request.param]
+    return AirQ(address, PASS, session, timeout=5)
 
 
 @pytest.mark.asyncio

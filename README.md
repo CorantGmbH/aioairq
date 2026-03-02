@@ -13,7 +13,9 @@ import asyncio
 import aiohttp
 from aioairq import AirQ
 
-ADDRESS = "123ab_air-q.local"
+# The address can be an IP, an mDNS hostname, or just the short device ID
+# (the hex string printed on the device, e.g. "123ab").
+ADDRESS = "123ab"
 PASSWORD = "airqsetup"
 
 async def main():

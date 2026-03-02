@@ -26,6 +26,11 @@ def mdns():
 
 
 @fixture
+def device_id():
+    return "a123f"
+
+
+@fixture
 def passw():
     return "password"
 
@@ -37,16 +42,55 @@ async def session():
     await session.close()
 
 
-@fixture(params=["ip", "mdns"])
-def valid_address(request, ip, mdns):
-    return {"ip": ip, "mdns": mdns}[request.param]
+@fixture(params=["ip", "mdns", "device_id"])
+def valid_address(request, ip, mdns, device_id):
+    return {"ip": ip, "mdns": mdns, "device_id": device_id}[request.param]
 
 
 @pytest.mark.asyncio
 async def test_constructor(valid_address, passw, session):
     airq = AirQ(valid_address, passw, session)
-    assert airq.anchor == "http://" + valid_address
+    # device_id should be resolved to mdns
+    if valid_address == "a123f":
+        assert airq.anchor == "http://a123f_air-q.local"
+    else:
+        assert airq.anchor == "http://" + valid_address
     assert not airq._session.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "device_id_input,expected_address",
+    [
+        ("b4bca", "b4bca_air-q.local"),
+        ("A1B2C", "A1B2C_air-q.local"),
+        ("abcdef1234", "abcdef1234_air-q.local"),
+    ],
+)
+async def test_constructor_from_device_id(
+    device_id_input, expected_address, passw, session
+):
+    airq = AirQ(device_id_input, passw, session)
+    assert airq.address == expected_address
+    assert airq.anchor == "http://" + expected_address
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "address_not_device_id",
+    [
+        "192.168.0.1",
+        "b4bca_air-q.local",
+        "my-air-q.local",
+        "127.0.0.1:8080",
+    ],
+)
+async def test_constructor_does_not_resolve_non_device_id(
+    address_not_device_id, passw, session
+):
+    """Addresses that are not bare hex device IDs should be used as-is."""
+    airq = AirQ(address_not_device_id, passw, session)
+    assert airq.address == address_not_device_id
 
 
 @pytest.mark.asyncio

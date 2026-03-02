@@ -122,6 +122,7 @@ class NightMode(TypedDict):
 
 class AirQ:
     _supported_routes = ["config", "log", "data", "average", "ping"]
+    _DEVICE_ID_PATTERN = re.compile(r"[0-9a-fA-F]{5,}")
 
     def __init__(
         self,
@@ -138,8 +139,10 @@ class AirQ:
         Parameters
         ----------
         address : str
-            Either the IP address of the device, or its mDNS.
-            Device's IP might be a more robust option (across the variety of routers)
+            Either the IP address of the device, its mDNS, or a short
+            device ID (e.g. ``"b4bca"``). A device ID is a short
+            hexadecimal string that is automatically resolved to the
+            mDNS name ``<device_id>_air-q.local``.
         passw : str
             Device's password
         session : aiohttp.ClientSession
@@ -151,12 +154,18 @@ class AirQ:
             on the same WiFi
         """
 
+        if self._DEVICE_ID_PATTERN.fullmatch(address):
+            address = self._device_id_to_address(address)
         self.address = address
         self.anchor = "http://" + self.address
         self.aes = AESCipher(passw)
         self._session = session
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._previous_data: dict = {}
+
+    @staticmethod
+    def _device_id_to_address(device_id: str) -> str:
+        return f"{device_id}_air-q.local"
 
     async def has_api_access(self) -> bool:
         return (await self.get_config())["APIaccess"]

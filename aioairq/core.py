@@ -372,7 +372,7 @@ class AirQ:
 
         relative_url is expected to start with a slash."""
 
-        post_json_data_str = json.dumps(post_json_data)
+        post_json_data_str = json.dumps(post_json_data, ensure_ascii=False)
         _LOGGER.debug("Posting %s to %s", post_json_data_str, relative_url)
         headers = {"Content-Type": "application/x-www-form-urlencoded"}
         post_data = "request=" + self.aes.encode(post_json_data_str)

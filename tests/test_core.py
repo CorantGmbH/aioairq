@@ -1,8 +1,9 @@
 import asyncio
+import json
 import time
 from dataclasses import asdict
 from math import isclose
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import aiohttp
 import pytest
@@ -11,6 +12,7 @@ from pytest import approx, fixture
 
 from aioairq import AirQ
 from aioairq.core import ComparisonSummary, identify_warming_up_sensors
+from aioairq.encrypt import AESCipher
 
 TIMEOUT_MAX = 5
 
@@ -356,6 +358,59 @@ def test_data_comparison(previous, current, expected):
     assert actual_dict == expected_dict
     for sensor_name, actual_diff in actual_difference.items():
         assert actual_diff == approx(expected_difference[sensor_name])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "device_name",
+    [
+        "FW D\u00f6v Ind. \U0001f601",  # "FW Döv Ind. 😁" — contains non-BMP emoji
+        "Schr\u00f6dinger \U0001f408\u200d\u2b1b",  # "Schrödinger 🐈‍⬛"
+    ],
+)
+async def test_set_device_name_no_surrogates(
+    valid_address, passw, session, device_name
+):
+    """Verify that setting the device name does not produce UTF-16 surrogate escapes.
+
+    json.dumps with ensure_ascii=True (the default) encodes non-BMP characters
+    like emoji as surrogate pairs (e.g. \\ud83d\\ude01). If the device firmware
+    does a naive JSON parse, these surrogates get stored as-is, corrupting the name.
+    """
+    airq = AirQ(valid_address, passw, session)
+    aes = AESCipher(passw)
+
+    captured_data = {}
+
+    mock_response = AsyncMock()
+    mock_response.text = AsyncMock(
+        return_value=json.dumps({"content": aes.encode('"OK"')})
+    )
+
+    mock_post_cm = AsyncMock()
+    mock_post_cm.__aenter__ = AsyncMock(return_value=mock_response)
+    mock_post_cm.__aexit__ = AsyncMock(return_value=False)
+
+    def fake_post(*args, **kwargs):
+        captured_data["payload"] = kwargs.get(
+            "data", args[1] if len(args) > 1 else None
+        )
+        return mock_post_cm
+
+    with patch.object(session, "post", side_effect=fake_post):
+        await airq.set_device_name(device_name)
+
+    # Decrypt the payload to get the raw JSON string sent to the device
+    encrypted = captured_data["payload"].removeprefix("request=")
+    raw_json = aes.decode(encrypted)
+
+    # The raw JSON must not contain surrogate escapes like \ud83d\ude01
+    assert (
+        "\\ud" not in raw_json.lower()
+    ), f"Surrogate escape found in JSON sent to device: {raw_json!r}"
+    # Verify the name round-trips correctly through the JSON
+    parsed = json.loads(raw_json)
+    assert parsed["devicename"] == device_name
 
 
 @pytest_asyncio.fixture

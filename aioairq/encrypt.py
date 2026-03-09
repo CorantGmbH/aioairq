@@ -72,7 +72,16 @@ class AESCipher:
 
     @staticmethod
     def _unpad_bytes(data: bytes) -> bytes:
-        return data[: -data[-1]]
+        if not data:
+            raise InvalidAuth("Failed to unpad: empty data")
+        pad_len = data[-1]
+        if pad_len < 1 or pad_len > AES.block_size:
+            raise InvalidAuth(
+                f"Failed to unpad: invalid padding byte {pad_len!r}"
+            )
+        if data[-pad_len:] != bytes([pad_len] * pad_len):
+            raise InvalidAuth("Failed to unpad: padding bytes are inconsistent")
+        return data[:-pad_len]
 
     @staticmethod
     def _pass2aes(passw: str) -> str:

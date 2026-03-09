@@ -1,6 +1,9 @@
 import asyncio
+import base64
 import json
 import time
+import zlib
+from contextlib import contextmanager
 from dataclasses import asdict
 from math import isclose
 from unittest.mock import AsyncMock, patch
@@ -8,6 +11,8 @@ from unittest.mock import AsyncMock, patch
 import aiohttp
 import pytest
 import pytest_asyncio
+from Crypto.Cipher import AES
+from Crypto import Random
 from pytest import approx, fixture
 
 from aioairq import AirQ
@@ -468,3 +473,156 @@ async def test_hanging_response_triggers_total_timeout(hanging_server, session):
     assert isclose(
         elapsed, timeout_expected, abs_tol=0.1, rel_tol=0.1
     ), f"Elapsed {elapsed:.3f}s suggests no read/total timeout was enforced"
+
+
+# ---------------------------------------------------------------------------
+# Helpers for historical data tests
+# ---------------------------------------------------------------------------
+
+def _make_get_side_effect(responses: list[str]):
+    """Return a side_effect function that feeds session.get() calls one by one."""
+    it = iter(responses)
+
+    def fake_get(*args, **kwargs):
+        text = next(it)
+        mock_response = AsyncMock()
+        mock_response.text = AsyncMock(return_value=text)
+        mock_cm = AsyncMock()
+        mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
+        mock_cm.__aexit__ = AsyncMock(return_value=False)
+        return mock_cm
+
+    return fake_get
+
+
+def _encrypt_bytes(passw: str, data: bytes) -> str:
+    """Encrypt raw bytes with the same AES-CBC scheme as AESCipher.encode."""
+    key = passw.encode("utf-8")
+    key = key + b"0" * (32 - len(key)) if len(key) < 32 else key[:32]
+    pad_len = 16 - (len(data) % 16)
+    padded = data + bytes([pad_len] * pad_len)
+    iv = Random.new().read(16)
+    cipher = AES.new(key, AES.MODE_CBC, iv)
+    return base64.b64encode(iv + cipher.encrypt(padded)).decode("utf-8")
+
+
+SAMPLE_RECORDS = [
+    {"timestamp": 1715000000000, "co2": [604.0, 68.1], "Status": "OK"},
+    {"timestamp": 1715000120000, "co2": [610.0, 70.0], "Status": "OK"},
+]
+
+
+# ---------------------------------------------------------------------------
+# get_historical_files_list
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_historical_files_list_root_filters_non_numeric(
+    valid_address, passw, session
+):
+    """Root listing should only return numeric year entries."""
+    airq = AirQ(valid_address, passw, session)
+    aes = AESCipher(passw)
+
+    all_entries = ["2023", "2024", "2025", ".zlib", ".uncrypt", "logs", "proc", "csv"]
+    encrypted = aes.encode(json.dumps(all_entries))
+
+    with patch.object(session, "get", side_effect=_make_get_side_effect([encrypted])):
+        result = await airq.get_historical_files_list()
+
+    assert result == ["2023", "2024", "2025"]
+
+
+@pytest.mark.asyncio
+async def test_historical_files_list_subpath_returns_all(valid_address, passw, session):
+    """Sub-path listings should be returned as-is."""
+    airq = AirQ(valid_address, passw, session)
+    aes = AESCipher(passw)
+
+    months = ["1", "2", "3", "12"]
+    encrypted = aes.encode(json.dumps(months))
+
+    with patch.object(session, "get", side_effect=_make_get_side_effect([encrypted])):
+        result = await airq.get_historical_files_list("2024")
+
+    assert result == months
+
+
+# ---------------------------------------------------------------------------
+# get_historical_file — /file endpoint (compressed=False)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_plain_json(valid_address, passw, session):
+    """Lines that are already plain JSON (unencrypted storage) are parsed directly."""
+    airq = AirQ(valid_address, passw, session)
+    raw = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
+
+    with patch.object(session, "get", side_effect=_make_get_side_effect([raw])):
+        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=False)
+
+    assert result == SAMPLE_RECORDS
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_encrypted_lines(valid_address, passw, session):
+    """Lines that are AES-encrypted (pre-encrypted storage) are decrypted."""
+    airq = AirQ(valid_address, passw, session)
+    aes = AESCipher(passw)
+    raw = "\n".join(aes.encode(json.dumps(r)) for r in SAMPLE_RECORDS)
+
+    with patch.object(session, "get", side_effect=_make_get_side_effect([raw])):
+        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=False)
+
+    assert result == SAMPLE_RECORDS
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_empty(valid_address, passw, session):
+    """An empty response returns an empty list."""
+    airq = AirQ(valid_address, passw, session)
+
+    with patch.object(session, "get", side_effect=_make_get_side_effect([""])):
+        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=False)
+
+    assert result == []
+
+
+# ---------------------------------------------------------------------------
+# get_historical_file — /file_zlib endpoint (compressed=True, default)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_zlib(valid_address, passw, session):
+    """Compressed path: decrypts and decompresses the zlib blob."""
+    airq = AirQ(valid_address, passw, session)
+    text = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
+    compressed = zlib.compress(text.encode("utf-8"))
+    encrypted = _encrypt_bytes(passw, compressed)
+
+    with patch.object(session, "get", side_effect=_make_get_side_effect([encrypted])):
+        result = await airq.get_historical_file("2024/5/12/1715000000")
+
+    assert result == SAMPLE_RECORDS
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_zlib_fallback(valid_address, passw, session):
+    """If /file_zlib fails (e.g. not available), falls back to /file."""
+    airq = AirQ(valid_address, passw, session)
+    aes = AESCipher(passw)
+
+    # First response: garbage that will fail decompression → triggers fallback
+    bad_response = aes.encode("this is not zlib data")
+    # Second response: valid plain-JSON /file response
+    good_response = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
+
+    with patch.object(
+        session, "get", side_effect=_make_get_side_effect([bad_response, good_response])
+    ):
+        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=True)
+
+    assert result == SAMPLE_RECORDS

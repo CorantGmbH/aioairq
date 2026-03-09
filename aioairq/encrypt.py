@@ -50,6 +50,17 @@ class AESCipher:
             ) from None
         return self._unpad(decoded)
 
+    def decode_to_bytes(self, encrypted: str) -> bytes:
+        """Decrypt and return raw bytes, without UTF-8 decoding.
+
+        Needed for payloads containing binary data (e.g. zlib-compressed).
+        """
+        decoded = base64.b64decode(encrypted)
+        iv = decoded[: self._bs]
+        cipher = AES.new(self._key, AES.MODE_CBC, iv)
+        decrypted = cipher.decrypt(decoded[self._bs :])
+        return self._unpad_bytes(decrypted)
+
     @staticmethod
     def _pad(data: bytes) -> bytes:
         length = 16 - (len(data) % 16)
@@ -58,6 +69,10 @@ class AESCipher:
     @staticmethod
     def _unpad(data: str) -> str:
         return data[: -ord(data[-1])]
+
+    @staticmethod
+    def _unpad_bytes(data: bytes) -> bytes:
+        return data[: -data[-1]]
 
     @staticmethod
     def _pass2aes(passw: str) -> str:

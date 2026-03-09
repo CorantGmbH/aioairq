@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import zlib
 import re
 from dataclasses import dataclass, field
 from typing import Any, List, Literal, TypedDict
@@ -479,6 +480,84 @@ class AirQ:
 
     async def get_config(self) -> dict:
         return await self._get_json_and_decode("/config")
+
+    async def get_historical_files_list(self, path: str = "") -> list[str]:
+        """List entries in the device's historical data directory.
+
+        The air-Q stores data on its SD card in a year/month/day/timestamp
+        hierarchy.
+
+        Parameters
+        ----------
+        path : str
+            Directory path to list. Examples:
+
+            - ``""`` (empty): available years
+            - ``"2024"``: months in 2024
+            - ``"2024/5"``: days in May 2024
+            - ``"2024/5/12"``: file timestamps for that day
+        """
+        encrypted_path = self.aes.encode(path)
+        url = f"{self.anchor}/dir?request={encrypted_path}"
+
+        async with self._session.get(url, timeout=self._timeout) as response:
+            raw = await response.text()
+
+        decoded = self.aes.decode(raw)
+        entries: list[str] = json.loads(decoded)
+
+        # The root listing contains internal SD card directories (.zlib, .uncrypt,
+        # proc, logs, ...) alongside the actual year directories. Filter to only
+        # return plain numeric entries (years, months, days, or file timestamps).
+        if not path:
+            entries = [e for e in entries if e.isdigit()]
+
+        return entries
+
+    async def get_historical_file(
+        self, path: str, *, compressed: bool = True
+    ) -> list[dict]:
+        """Download a historical data file from the device.
+
+        Parameters
+        ----------
+        path : str
+            Full file path, e.g. ``"2024/5/12/1715000000"``.
+        compressed : bool
+            If True (default), attempt ``/file_zlib`` first (~1/5 size) and
+            fall back to ``/file`` automatically if the compressed version is
+            not available (older firmware or file still open for writing).
+            If False, always use ``/file``.
+
+        Returns
+        -------
+        list[dict]
+            List of measurement dictionaries, each containing sensor readings.
+        """
+        if compressed:
+            encrypted_path = self.aes.encode(path)
+            url = f"{self.anchor}/file_zlib?request={encrypted_path}"
+            async with self._session.get(url, timeout=self._timeout) as response:
+                raw = await response.text()
+            try:
+                decrypted = self.aes.decode_to_bytes(raw)
+                text = zlib.decompress(decrypted).decode("utf-8")
+                return [json.loads(line) for line in text.split("\n") if line]
+            except Exception:
+                pass  # fall back to /file below
+
+        encrypted_path = self.aes.encode(path)
+        url = f"{self.anchor}/file?request={encrypted_path}"
+        async with self._session.get(url, timeout=self._timeout) as response:
+            raw = await response.text()
+        lines = [line for line in raw.split("\n") if line]
+        if not lines:
+            return []
+        # The device may store data encrypted or unencrypted on its SD card.
+        # Encrypted lines are base64-encoded; unencrypted lines are plain JSON.
+        if lines[0].startswith("{"):
+            return [json.loads(line) for line in lines]
+        return [json.loads(self.aes.decode(line)) for line in lines]
 
     async def get_possible_led_themes(self) -> List[LedThemeName]:
         return (await self._get_json_and_decode("/config"))["possibleLedTheme"]

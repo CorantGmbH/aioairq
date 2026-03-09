@@ -37,6 +37,13 @@ asyncio.run(main())
 The air-Q stores measurement data on its SD card. You can browse and download this data:
 
 ```python
+import asyncio
+import aiohttp
+from aioairq import AirQ
+
+ADDRESS = "123ab_air-q.local"
+PASSWORD = "airqsetup"
+
 async def main():
     async with aiohttp.ClientSession() as session:
         airq = AirQ(ADDRESS, PASSWORD, session)
@@ -51,6 +58,8 @@ async def main():
 
         # Or download uncompressed
         data = await airq.get_historical_file("2024/5/12/1715000000", compressed=False)
+
+asyncio.run(main())
 ```
 
 ## Logging

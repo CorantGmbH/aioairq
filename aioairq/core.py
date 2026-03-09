@@ -525,8 +525,9 @@ class AirQ:
             Full file path, e.g. ``"2024/5/12/1715000000"``.
         compressed : bool
             If True (default), attempt ``/file_zlib`` first (~1/5 size) and
-            fall back to ``/file`` automatically if the compressed version is
-            not available (older firmware or file still open for writing).
+            fall back to ``/file`` if the response is not valid zlib data
+            (older firmware or file still open for writing).
+            Other errors (network, auth) are re-raised.
             If False, always use ``/file``.
 
         Returns
@@ -543,8 +544,8 @@ class AirQ:
                 decrypted = self.aes.decode_to_bytes(raw)
                 text = zlib.decompress(decrypted).decode("utf-8")
                 return [json.loads(line) for line in text.split("\n") if line]
-            except Exception:
-                pass  # fall back to /file below
+            except zlib.error:
+                pass  # /file_zlib not available for this path; fall back to /file
 
         encrypted_path = self.aes.encode(path)
         url = f"{self.anchor}/file?request={encrypted_path}"

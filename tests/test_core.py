@@ -3,7 +3,6 @@ import base64
 import json
 import time
 import zlib
-from contextlib import contextmanager
 from dataclasses import asdict
 from math import isclose
 from unittest.mock import AsyncMock, patch

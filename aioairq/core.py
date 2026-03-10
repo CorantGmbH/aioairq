@@ -5,7 +5,7 @@ import logging
 import zlib
 import re
 from dataclasses import dataclass, field
-from typing import Any, List, Literal, TypedDict
+from typing import Any, List, Literal, TypedDict, get_args
 
 import aiohttp
 
@@ -20,6 +20,8 @@ from aioairq.utils import is_time_in_interval, is_valid_ipv4_address
 
 _LOGGER = logging.getLogger(__name__)
 
+
+_FileRoute = Literal["file", "file_zlib", "dir"]
 LedThemeName = Literal[
     "standard",
     "standard (contrast)",
@@ -332,16 +334,24 @@ class AirQ:
         _LOGGER.debug("Fetching from %s", subject)
         return await self._get_json_and_decode("/" + subject)
 
+    async def _get_raw(self, relative_url: str) -> str:
+        """GET ``relative_url`` and return the response body as text.
+
+        This is the lowest level method and the only one
+        which actually requests GET from the device.
+        """
+        async with self._session.get(
+            f"{self.anchor}{relative_url}", timeout=self._timeout
+        ) as response:
+            return await response.text()
+
     async def _get_json(self, relative_url: str) -> dict:
         """Executes a GET request to the air-Q device with the configured timeout
         and returns JSON data as a dictionary.
 
         relative_url is expected to start with a slash."""
 
-        async with self._session.get(
-            f"{self.anchor}{relative_url}", timeout=self._timeout
-        ) as response:
-            json_string = await response.text()
+        json_string = await self._get_raw(relative_url)
 
         try:
             return json.loads(json_string)
@@ -350,6 +360,23 @@ class AirQ:
                 "_get_json() must only be used to query endpoints returning JSON data. "
                 f"{relative_url} returned {json_string}."
             ) from e
+
+    async def _get_raw_file(self, path: str, route: _FileRoute = "file") -> str:
+        """Fetch raw response from a route that takes an encrypted path argument.
+
+        Parameters
+        ----------
+        path : str
+            Path on the device's SD card, e.g. ``"2024/5/12/1715000000"``.
+        route : ``"file"`` | ``"file_zlib"`` | ``"dir"``
+            Device route to query. The path is AES-encrypted and passed
+            via ``?request=``.
+        """
+        if route not in get_args(_FileRoute):
+            raise ValueError(f"Cannot query {path=} from {route=}")
+        encrypted_path = self.aes.encode(path)
+        relative_url = f"/{route}?request={encrypted_path}"
+        return await self._get_raw(relative_url)
 
     async def _get_json_and_decode(self, relative_url: str) -> Any:
         """Executes a GET request to the air-Q device with the configured timeout
@@ -497,11 +524,7 @@ class AirQ:
             - ``"2024/5"``: days in May 2024
             - ``"2024/5/12"``: file timestamps for that day
         """
-        encrypted_path = self.aes.encode(path)
-        url = f"{self.anchor}/dir?request={encrypted_path}"
-
-        async with self._session.get(url, timeout=self._timeout) as response:
-            raw = await response.text()
+        raw = await self._get_raw_file(path, route="dir")
 
         decoded = self.aes.decode(raw)
         entries: list[str] = json.loads(decoded)
@@ -535,30 +558,28 @@ class AirQ:
         list[dict]
             List of measurement dictionaries, each containing sensor readings.
         """
+        lines: list[str] = []  # only needed to silence pyright
         if compressed:
-            encrypted_path = self.aes.encode(path)
-            url = f"{self.anchor}/file_zlib?request={encrypted_path}"
-            async with self._session.get(url, timeout=self._timeout) as response:
-                raw = await response.text()
+            raw = await self._get_raw_file(path, route="file_zlib")
             try:
+                # /file_zlib returns a single encrypted blob of zlib-compressed data
                 decrypted = self.aes.decode_to_bytes(raw)
-                text = zlib.decompress(decrypted).decode("utf-8")
-                return [json.loads(line) for line in text.split("\n") if line]
+                lines = zlib.decompress(decrypted).decode("utf-8").split("\n")
             except zlib.error:
-                pass  # /file_zlib not available for this path; fall back to /file
+                compressed = False  # fall back to /file
 
-        encrypted_path = self.aes.encode(path)
-        url = f"{self.anchor}/file?request={encrypted_path}"
-        async with self._session.get(url, timeout=self._timeout) as response:
-            raw = await response.text()
-        lines = [line for line in raw.split("\n") if line]
+        if not compressed:
+            raw = await self._get_raw_file(path, route="file")
+            lines = raw.split("\n")
+
+        lines = [line for line in lines if line]
         if not lines:
             return []
-        # The device may store data encrypted or unencrypted on its SD card.
-        # Encrypted lines are base64-encoded; unencrypted lines are plain JSON.
-        if lines[0].startswith("{"):
-            return [json.loads(line) for line in lines]
-        return [json.loads(self.aes.decode(line)) for line in lines]
+        # Lines are either unencrypted plain JSON or individually AES encrypted
+        if not lines[0].startswith("{"):
+            # yes an extra pass, but my benchmarks said it isn't prohibitive
+            lines = [self.aes.decode(line) for line in lines]
+        return [json.loads(line) for line in lines]
 
     async def get_possible_led_themes(self) -> List[LedThemeName]:
         return (await self._get_json_and_decode("/config"))["possibleLedTheme"]

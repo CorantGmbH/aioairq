@@ -124,7 +124,7 @@ class NightMode(TypedDict):
 
 
 class AirQ:
-    _supported_routes = ["config", "log", "data", "average", "ping"]
+    _json_envelope_routes = ["config", "log", "data", "average", "ping"]
 
     def __init__(
         self,
@@ -323,12 +323,13 @@ class AirQ:
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device.
 
-        This function only works on a limited set of subject specified in _supported_routes.
-        Prefer using more specialized functions."""
-        if subject not in self._supported_routes:
+        This function only works on a limited set of subject specified in
+        _json_envelope_routes.
+        """
+        if subject not in self._json_envelope_routes:
             raise NotImplementedError(
                 "AirQ.get() is currently limited to a set of requests, returning "
-                f"a dict with a key 'content' (namely {self._supported_routes})."
+                f"a dict with a key 'content' (namely {self._json_envelope_routes})."
             )
 
         _LOGGER.debug("Fetching from %s", subject)

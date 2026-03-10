@@ -34,22 +34,6 @@ class AESCipher:
 
         return base64.b64encode(encrypted).decode("utf-8")
 
-    def decode(self, encrypted: str) -> str:
-        decoded = base64.b64decode(encrypted)
-        iv = decoded[: self._bs]
-        cipher = AES.new(self._key, AES.MODE_CBC, iv)
-        decrypted = cipher.decrypt(decoded[self._bs :])
-        try:
-            # Currently the device does not support proper authentication.
-            # The success or failure of the authentication based on the ability
-            # to decode the response from the device.
-            decoded = decrypted.decode("utf-8")
-        except UnicodeDecodeError:
-            raise InvalidAuth(
-                "Failed to decode a message. Incorrect password"
-            ) from None
-        return self._unpad(decoded)
-
     def decode_to_bytes(self, encrypted: str) -> bytes:
         """Decrypt and return raw bytes, without UTF-8 decoding.
 
@@ -61,14 +45,22 @@ class AESCipher:
         decrypted = cipher.decrypt(decoded[self._bs :])
         return self._unpad_bytes(decrypted)
 
+    def decode(self, encrypted: str) -> str:
+        unpadded = self.decode_to_bytes(encrypted)
+        try:
+            # Currently the device does not support proper authentication.
+            # The success or failure of the authentication based on the ability
+            # to decode the response from the device.
+            return unpadded.decode("utf-8")
+        except UnicodeDecodeError:
+            raise InvalidAuth(
+                "Failed to decode a message. Incorrect password"
+            ) from None
+
     @staticmethod
     def _pad(data: bytes) -> bytes:
         length = 16 - (len(data) % 16)
         return data + bytes(chr(length) * length, "utf-8")
-
-    @staticmethod
-    def _unpad(data: str) -> str:
-        return data[: -ord(data[-1])]
 
     @staticmethod
     def _unpad_bytes(data: bytes) -> bytes:
@@ -76,9 +68,7 @@ class AESCipher:
             raise InvalidAuth("Failed to unpad: empty data")
         pad_len = data[-1]
         if pad_len < 1 or pad_len > AES.block_size:
-            raise InvalidAuth(
-                f"Failed to unpad: invalid padding byte {pad_len!r}"
-            )
+            raise InvalidAuth(f"Failed to unpad: invalid padding byte {pad_len!r}")
         if data[-pad_len:] != bytes([pad_len] * pad_len):
             raise InvalidAuth("Failed to unpad: padding bytes are inconsistent")
         return data[:-pad_len]

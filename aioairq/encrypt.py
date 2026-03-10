@@ -43,19 +43,17 @@ class AESCipher:
         iv = decoded[: self._bs]
         cipher = AES.new(self._key, AES.MODE_CBC, iv)
         decrypted = cipher.decrypt(decoded[self._bs :])
-        return self._unpad_bytes(decrypted)
+        try:
+            return self._unpad_bytes(decrypted)
+        except ValueError as exc:
+            raise InvalidAuth("Failed to decrypt. Incorrect password?") from exc
 
     def decode(self, encrypted: str) -> str:
         unpadded = self.decode_to_bytes(encrypted)
         try:
-            # Currently the device does not support proper authentication.
-            # The success or failure of the authentication based on the ability
-            # to decode the response from the device.
             return unpadded.decode("utf-8")
-        except UnicodeDecodeError:
-            raise InvalidAuth(
-                "Failed to decode a message. Incorrect password"
-            ) from None
+        except UnicodeDecodeError as exc:
+            raise InvalidAuth("Failed to decrypt. Incorrect password?") from exc
 
     @staticmethod
     def _pad(data: bytes) -> bytes:
@@ -65,12 +63,12 @@ class AESCipher:
     @staticmethod
     def _unpad_bytes(data: bytes) -> bytes:
         if not data:
-            raise InvalidAuth("Failed to unpad: empty data")
+            raise ValueError("empty data")
         pad_len = data[-1]
         if pad_len < 1 or pad_len > AES.block_size:
-            raise InvalidAuth(f"Failed to unpad: invalid padding byte {pad_len!r}")
+            raise ValueError(f"invalid padding byte {pad_len!r}")
         if data[-pad_len:] != bytes([pad_len] * pad_len):
-            raise InvalidAuth("Failed to unpad: padding bytes are inconsistent")
+            raise ValueError("padding bytes are inconsistent")
         return data[:-pad_len]
 
     @staticmethod

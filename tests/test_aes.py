@@ -45,19 +45,19 @@ class TestUnpadBytes:
         assert AESCipher._unpad_bytes(padded) == payload
 
     def test_empty_data_raises(self):
-        with pytest.raises(InvalidAuth):
+        with pytest.raises(ValueError):
             AESCipher._unpad_bytes(b"")
 
     def test_zero_padding_byte_raises(self):
-        with pytest.raises(InvalidAuth):
+        with pytest.raises(ValueError):
             AESCipher._unpad_bytes(b"\x00" * 16)
 
     def test_padding_byte_too_large_raises(self):
-        with pytest.raises(InvalidAuth):
+        with pytest.raises(ValueError):
             AESCipher._unpad_bytes(bytes([17] * 17))
 
     def test_inconsistent_padding_raises(self):
         payload = b"hello"
         bad_padded = payload + b"\x03\x03\x02"
-        with pytest.raises(InvalidAuth):
+        with pytest.raises(ValueError):
             AESCipher._unpad_bytes(bad_padded)

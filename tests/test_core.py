@@ -539,17 +539,25 @@ async def test_historical_files_list_subpath_returns_all(valid_address, passw, s
 
 
 @pytest.mark.asyncio
-async def test_get_historical_file_plain_json(valid_address, passw, session):
+@pytest.mark.parametrize(
+    "raw,expected",
+    [
+        ("\n".join(json.dumps(r) for r in SAMPLE_RECORDS), SAMPLE_RECORDS),
+        ("", []),  # empty file
+    ],
+)
+async def test_get_historical_file_plain_json(
+    valid_address, passw, session, raw, expected
+):
     """Lines that are already plain JSON (unencrypted storage) are parsed directly."""
     airq = AirQ(valid_address, passw, session)
-    raw = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
 
     with patch.object(session, "get", side_effect=_make_get_side_effect([raw])):
         result = await airq.get_historical_file(
             "2024/5/12/1715000000", compressed=False
         )
 
-    assert result == SAMPLE_RECORDS
+    assert result == expected
 
 
 @pytest.mark.asyncio
@@ -564,19 +572,6 @@ async def test_get_historical_file_encrypted_lines(valid_address, passw, session
         )
 
     assert result == SAMPLE_RECORDS
-
-
-@pytest.mark.asyncio
-async def test_get_historical_file_empty(valid_address, passw, session):
-    """An empty response returns an empty list."""
-    airq = AirQ(valid_address, passw, session)
-
-    with patch.object(session, "get", side_effect=_make_get_side_effect([""])):
-        result = await airq.get_historical_file(
-            "2024/5/12/1715000000", compressed=False
-        )
-
-    assert result == []
 
 
 # ---------------------------------------------------------------------------

@@ -4,7 +4,7 @@ import time
 import zlib
 from dataclasses import asdict
 from math import isclose
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import aiohttp
 import pytest
@@ -484,6 +484,7 @@ def _make_get_side_effect(responses: list[str]):
         text = next(it)
         mock_response = AsyncMock()
         mock_response.text = AsyncMock(return_value=text)
+        mock_response.raise_for_status = Mock()
         mock_cm = AsyncMock()
         mock_cm.__aenter__ = AsyncMock(return_value=mock_response)
         mock_cm.__aexit__ = AsyncMock(return_value=False)
@@ -622,6 +623,30 @@ async def test_get_historical_file_zlib_fallback(valid_address, passw, session):
             }
         ),
     ):
+        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=True)
+
+    assert result == SAMPLE_RECORDS
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_zlib_404_fallback(valid_address, passw, session):
+    """/file_zlib 404 falls back to /file immediately."""
+    airq = AirQ(valid_address, passw, session)
+    good_plain = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
+
+    async def side_effect(path: str, route: str = "file"):
+        if route == "file_zlib":
+            raise aiohttp.ClientResponseError(
+                request_info=Mock(real_url=f"{airq.anchor}/file_zlib"),
+                history=(),
+                status=404,
+                message="Not Found",
+            )
+        if route == "file":
+            return good_plain
+        raise AssertionError(f"Unexpected route {route}")
+
+    with patch.object(airq, "_get_raw_file", side_effect=side_effect):
         result = await airq.get_historical_file("2024/5/12/1715000000", compressed=True)
 
     assert result == SAMPLE_RECORDS

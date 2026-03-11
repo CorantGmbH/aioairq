@@ -344,6 +344,7 @@ class AirQ:
         async with self._session.get(
             f"{self.anchor}{relative_url}", timeout=self._timeout
         ) as response:
+            response.raise_for_status()
             return await response.text()
 
     async def _get_json(self, relative_url: str) -> dict:
@@ -550,6 +551,7 @@ class AirQ:
         compressed : bool
             If True (default), attempt ``/file_zlib`` first (~1/5 size) and
             fall back to ``/file`` if the response is not valid zlib data
+            or if ``/file_zlib`` responds with HTTP 404
             (older firmware or file still open for writing).
             Other errors (network, auth) are re-raised.
             If False, always use ``/file``.
@@ -561,11 +563,16 @@ class AirQ:
         """
         lines: list[str] = []  # only needed to silence pyright
         if compressed:
-            raw = await self._get_raw_file(path, route="file_zlib")
             try:
+                raw = await self._get_raw_file(path, route="file_zlib")
                 # /file_zlib returns a single encrypted blob of zlib-compressed data
                 decrypted = self.aes.decode_to_bytes(raw)
                 lines = zlib.decompress(decrypted).decode("utf-8").split("\n")
+            except aiohttp.ClientResponseError as e:
+                if e.status == 404:
+                    compressed = False  # fall back to /file
+                else:
+                    raise
             except zlib.error:
                 compressed = False  # fall back to /file
 

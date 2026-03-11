@@ -359,55 +359,19 @@ async def test_historical_files_list(airq):
 
 
 @pytest.mark.asyncio
-async def test_historical_file_download(airq):
-    """Test downloading a historical data file (uncompressed)."""
+@pytest.mark.parametrize("compressed", [False, True])
+async def test_historical_file_download(airq, compressed):
+    """Test downloading a historical data file."""
+    # Use the oldest file on the device: it is guaranteed to be closed
+    # and fully compressed (if it isn't the only file),
+    # so to maximise the chanced of /file_zlib working properly.
     years = await airq.get_historical_files_list()
     months = await airq.get_historical_files_list(years[-1])
     days = await airq.get_historical_files_list(f"{years[-1]}/{months[-1]}")
-    files = await airq.get_historical_files_list(
-        f"{years[-1]}/{months[-1]}/{days[-1]}"
-    )
+    files = await airq.get_historical_files_list(f"{years[-1]}/{months[-1]}/{days[-1]}")
 
     path = f"{years[-1]}/{months[-1]}/{days[-1]}/{files[0]}"
-    data = await airq.get_historical_file(path, compressed=False)
-
-    assert isinstance(data, list)
-    assert len(data) > 0
-    assert isinstance(data[0], dict)
-    assert "timestamp" in data[0]
-
-
-@pytest.mark.asyncio
-async def test_historical_file_download_compressed(airq):
-    """Test downloading a historical data file via /file_zlib with /file fallback."""
-    years = await airq.get_historical_files_list()
-
-    # Find a day with at least two files: the newest file on the device is
-    # still open for writing and therefore not yet compressed, so we need a
-    # non-latest file to exercise the /file_zlib path. If no such file exists
-    # (e.g. brand-new device), fall back to the single available file.
-    path = None
-    for year in reversed(years):
-        months = await airq.get_historical_files_list(year)
-        for month in reversed(months):
-            days = await airq.get_historical_files_list(f"{year}/{month}")
-            for day in reversed(days):
-                files = await airq.get_historical_files_list(
-                    f"{year}/{month}/{day}"
-                )
-                if len(files) > 1:
-                    path = f"{year}/{month}/{day}/{files[0]}"
-                    break
-            if path:
-                break
-        if path:
-            break
-
-    if path is None:
-        pytest.skip("No suitable historical file found (device too new?)")
-
-    # compressed=True: tries /file_zlib, falls back to /file automatically
-    data = await airq.get_historical_file(path, compressed=True)
+    data = await airq.get_historical_file(path, compressed=compressed)
 
     assert isinstance(data, list)
     assert len(data) > 0

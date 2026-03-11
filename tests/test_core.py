@@ -492,6 +492,17 @@ def _make_get_side_effect(responses: list[str]):
     return fake_get
 
 
+def _make_raw_file_by_route(route_to_response: dict[str, str]):
+    """Return a side_effect for ``_get_raw_file`` that dispatches by route."""
+
+    async def fake(path, route="file"):
+        if route in route_to_response:
+            return route_to_response[route]
+        raise AssertionError(f"Unexpected route: {route}")
+
+    return fake
+
+
 SAMPLE_RECORDS = [
     {"timestamp": 1715000000000, "co2": [604.0, 68.1], "Status": "OK"},
     {"timestamp": 1715000120000, "co2": [610.0, 70.0], "Status": "OK"},
@@ -595,16 +606,21 @@ async def test_get_historical_file_zlib(valid_address, passw, session):
 
 @pytest.mark.asyncio
 async def test_get_historical_file_zlib_fallback(valid_address, passw, session):
-    """If /file_zlib fails (e.g. not available), falls back to /file."""
+    """If /file_zlib returns non-zlib data, falls back to /file."""
     airq = AirQ(valid_address, passw, session)
 
-    # First response: garbage that will fail decompression → triggers fallback
-    bad_response = airq.aes.encode("this is not zlib data")
-    # Second response: valid plain-JSON /file response
-    good_response = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
+    bad_zlib = airq.aes.encode("this is not zlib data")
+    good_plain = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
 
     with patch.object(
-        session, "get", side_effect=_make_get_side_effect([bad_response, good_response])
+        airq,
+        "_get_raw_file",
+        side_effect=_make_raw_file_by_route(
+            {
+                "file_zlib": bad_zlib,
+                "file": good_plain,
+            }
+        ),
     ):
         result = await airq.get_historical_file("2024/5/12/1715000000", compressed=True)
 

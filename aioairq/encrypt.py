@@ -1,4 +1,5 @@
 """Module concerned with encryption of the data"""
+
 import base64
 
 from Crypto.Cipher import AES
@@ -26,11 +27,14 @@ class AESCipher:
         self._key = self._pass2aes(passw)
 
     def encode(self, data: str) -> str:
+        encoded = data.encode("utf-8")
+        return self.encode_bytes(encoded)
+
+    def encode_bytes(self, data: bytes) -> str:
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(self._key, AES.MODE_CBC, iv)
 
-        encoded = data.encode("utf-8")
-        encrypted = iv + cipher.encrypt(self._pad(encoded))
+        encrypted = iv + cipher.encrypt(self._pad(data))
 
         return base64.b64encode(encrypted).decode("utf-8")
 

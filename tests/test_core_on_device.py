@@ -377,3 +377,24 @@ async def test_historical_file_download(airq, compressed):
     assert len(data) > 0
     assert isinstance(data[0], dict)
     assert "timestamp" in data[0]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("compressed", [False, True])
+async def test_historical_file_download_failing(airq, compressed):
+    """Test downloading a historical data file."""
+    # Use the oldest file on the device: it is guaranteed to be closed
+    # and fully compressed (if it isn't the only file),
+    # so to maximise the chanced of /file_zlib working properly.
+    years = await airq.get_historical_files_list()
+    months = await airq.get_historical_files_list(years[0])
+    days = await airq.get_historical_files_list(f"{years[0]}/{months[0]}")
+    files = await airq.get_historical_files_list(f"{years[0]}/{months[0]}/{days[0]}")
+
+    path = f"{years[0]}/{months[0]}/{days[0]}/{files[0]}"
+    data = await airq.get_historical_file(path, compressed=compressed)
+
+    assert isinstance(data, list)
+    assert len(data) > 0
+    assert isinstance(data[0], dict)
+    assert "timestamp" in data[0]

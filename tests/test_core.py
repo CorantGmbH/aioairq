@@ -546,107 +546,200 @@ async def test_historical_files_list_subpath_returns_all(valid_address, passw, s
 
 
 # ---------------------------------------------------------------------------
-# get_historical_file — /file endpoint (compressed=False)
+# _parse_historical_lines
+#
+# Pure method: no I/O, no mocking. Tested directly to cover line format
+# variations (plain JSON, AES-encrypted) and edge cases (empty input,
+# trailing blank lines) without routing through the full fetch pipeline.
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "raw,expected",
+    "lines,expected",
     [
-        ("\n".join(json.dumps(r) for r in SAMPLE_RECORDS), SAMPLE_RECORDS),
-        ("", []),  # empty file
+        # plain JSON lines
+        (
+            [json.dumps(r) for r in SAMPLE_RECORDS],
+            SAMPLE_RECORDS,
+        ),
+        # empty input
+        ([], []),
+        # blank lines are filtered out
+        (
+            [json.dumps(SAMPLE_RECORDS[0]), "", "", json.dumps(SAMPLE_RECORDS[1]), ""],
+            SAMPLE_RECORDS,
+        ),
     ],
 )
-async def test_get_historical_file_plain_json(
-    valid_address, passw, session, raw, expected
+def test_parse_historical_lines_plain_json(
+    valid_address, passw, session, lines, expected
 ):
-    """Lines that are already plain JSON (unencrypted storage) are parsed directly."""
+    """Plain JSON lines (unencrypted storage) are parsed directly."""
     airq = AirQ(valid_address, passw, session)
-
-    with patch.object(session, "get", side_effect=_make_get_side_effect([raw])):
-        result = await airq.get_historical_file(
-            "2024/5/12/1715000000", compressed=False
-        )
-
-    assert result == expected
+    assert airq._parse_historical_lines(lines) == expected
 
 
-@pytest.mark.asyncio
-async def test_get_historical_file_encrypted_lines(valid_address, passw, session):
-    """Lines that are AES-encrypted (pre-encrypted storage) are decrypted."""
+def test_parse_historical_lines_encrypted(valid_address, passw, session):
+    """AES-encrypted lines are decrypted before JSON parsing."""
     airq = AirQ(valid_address, passw, session)
-    raw = "\n".join(airq.aes.encode(json.dumps(r)) for r in SAMPLE_RECORDS)
-
-    with patch.object(session, "get", side_effect=_make_get_side_effect([raw])):
-        result = await airq.get_historical_file(
-            "2024/5/12/1715000000", compressed=False
-        )
-
-    assert result == SAMPLE_RECORDS
+    encrypted_lines = [airq.aes.encode(json.dumps(r)) for r in SAMPLE_RECORDS]
+    assert airq._parse_historical_lines(encrypted_lines) == SAMPLE_RECORDS
 
 
 # ---------------------------------------------------------------------------
-# get_historical_file — /file_zlib endpoint (compressed=True, default)
+# _fetch_compressed_lines
+#
+# Tests the three possible outcomes of requesting /file_zlib:
+# success (returns lines), HTTP 404 (returns None to signal fallback),
+# invalid zlib payload (returns None). Non-404 HTTP errors must propagate.
+# Patching is done at _get_raw_file level — one layer above the network.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_get_historical_file_zlib(valid_address, passw, session):
-    """Compressed path: decrypts and decompresses the zlib blob."""
+async def test_fetch_compressed_lines_success(valid_address, passw, session):
+    """Happy path: /file_zlib returns a valid zlib blob."""
     airq = AirQ(valid_address, passw, session)
     text = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
     compressed = zlib.compress(text.encode("utf-8"))
     encrypted = airq.aes.encode_bytes(compressed)
 
-    with patch.object(session, "get", side_effect=_make_get_side_effect([encrypted])):
-        result = await airq.get_historical_file("2024/5/12/1715000000")
+    with patch.object(
+        airq,
+        "_get_raw_file",
+        side_effect=_make_raw_file_by_route({"file_zlib": encrypted}),
+    ):
+        lines = await airq._fetch_compressed_lines("2024/5/12/1715000000")
 
-    assert result == SAMPLE_RECORDS
+    assert lines is not None
+    assert airq._parse_historical_lines(lines) == SAMPLE_RECORDS
 
 
 @pytest.mark.asyncio
-async def test_get_historical_file_zlib_fallback(valid_address, passw, session):
-    """If /file_zlib returns non-zlib data, falls back to /file."""
+async def test_fetch_compressed_lines_404(valid_address, passw, session):
+    """HTTP 404 from /file_zlib returns None (signal to fall back)."""
     airq = AirQ(valid_address, passw, session)
 
+    async def raise_404(path, route="file"):
+        raise aiohttp.ClientResponseError(
+            request_info=Mock(real_url=f"{airq.anchor}/file_zlib"),
+            history=(),
+            status=404,
+            message="Not Found",
+        )
+
+    with patch.object(airq, "_get_raw_file", side_effect=raise_404):
+        result = await airq._fetch_compressed_lines("2024/5/12/1715000000")
+
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_compressed_lines_bad_zlib(valid_address, passw, session):
+    """Invalid zlib payload returns None (signal to fall back)."""
+    airq = AirQ(valid_address, passw, session)
     bad_zlib = airq.aes.encode("this is not zlib data")
-    good_plain = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
 
     with patch.object(
         airq,
         "_get_raw_file",
-        side_effect=_make_raw_file_by_route(
-            {
-                "file_zlib": bad_zlib,
-                "file": good_plain,
-            }
-        ),
+        side_effect=_make_raw_file_by_route({"file_zlib": bad_zlib}),
     ):
-        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=True)
+        result = await airq._fetch_compressed_lines("2024/5/12/1715000000")
 
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_fetch_compressed_lines_non_404_error_propagates(
+    valid_address, passw, session
+):
+    """Non-404 HTTP errors (e.g. 500) must not be swallowed."""
+    airq = AirQ(valid_address, passw, session)
+
+    async def raise_500(path, route="file"):
+        raise aiohttp.ClientResponseError(
+            request_info=Mock(real_url=f"{airq.anchor}/file_zlib"),
+            history=(),
+            status=500,
+            message="Internal Server Error",
+        )
+
+    with patch.object(airq, "_get_raw_file", side_effect=raise_500):
+        with pytest.raises(aiohttp.ClientResponseError, match="500"):
+            await airq._fetch_compressed_lines("2024/5/12/1715000000")
+
+
+# ---------------------------------------------------------------------------
+# get_historical_file (orchestrator)
+#
+# The orchestrator's job is call routing: try compressed, fall back to plain,
+# parse. The fallback logic itself is tested above in _fetch_compressed_lines.
+# Here we patch the private fetch methods to verify the orchestration contract
+# without duplicating zlib/HTTP concerns.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_historical_file_uses_compressed_when_available(
+    valid_address, passw, session
+):
+    """compressed=True and compressed data available: only _fetch_compressed_lines is called."""
+    airq = AirQ(valid_address, passw, session)
+    sample_lines = [json.dumps(r) for r in SAMPLE_RECORDS]
+
+    with (
+        patch.object(
+            airq, "_fetch_compressed_lines", return_value=sample_lines
+        ) as mock_compressed,
+        patch.object(airq, "_fetch_plain_lines") as mock_plain,
+    ):
+        result = await airq.get_historical_file("2024/5/12/1715000000")
+
+    mock_compressed.assert_awaited_once_with("2024/5/12/1715000000")
+    mock_plain.assert_not_awaited()
     assert result == SAMPLE_RECORDS
 
 
 @pytest.mark.asyncio
-async def test_get_historical_file_zlib_404_fallback(valid_address, passw, session):
-    """/file_zlib 404 falls back to /file immediately."""
+async def test_get_historical_file_falls_back_to_plain(valid_address, passw, session):
+    """compressed=True but compressed unavailable: falls back to _fetch_plain_lines."""
     airq = AirQ(valid_address, passw, session)
-    good_plain = "\n".join(json.dumps(r) for r in SAMPLE_RECORDS)
+    sample_lines = [json.dumps(r) for r in SAMPLE_RECORDS]
 
-    async def side_effect(path: str, route: str = "file"):
-        if route == "file_zlib":
-            raise aiohttp.ClientResponseError(
-                request_info=Mock(real_url=f"{airq.anchor}/file_zlib"),
-                history=(),
-                status=404,
-                message="Not Found",
-            )
-        if route == "file":
-            return good_plain
-        raise AssertionError(f"Unexpected route {route}")
+    with (
+        patch.object(
+            airq, "_fetch_compressed_lines", return_value=None
+        ) as mock_compressed,
+        patch.object(
+            airq, "_fetch_plain_lines", return_value=sample_lines
+        ) as mock_plain,
+    ):
+        result = await airq.get_historical_file("2024/5/12/1715000000")
 
-    with patch.object(airq, "_get_raw_file", side_effect=side_effect):
-        result = await airq.get_historical_file("2024/5/12/1715000000", compressed=True)
+    mock_compressed.assert_awaited_once_with("2024/5/12/1715000000")
+    mock_plain.assert_awaited_once_with("2024/5/12/1715000000")
+    assert result == SAMPLE_RECORDS
 
+
+@pytest.mark.asyncio
+async def test_get_historical_file_skips_compressed_when_disabled(
+    valid_address, passw, session
+):
+    """compressed=False: skips _fetch_compressed_lines entirely."""
+    airq = AirQ(valid_address, passw, session)
+    sample_lines = [json.dumps(r) for r in SAMPLE_RECORDS]
+
+    with (
+        patch.object(airq, "_fetch_compressed_lines") as mock_compressed,
+        patch.object(
+            airq, "_fetch_plain_lines", return_value=sample_lines
+        ) as mock_plain,
+    ):
+        result = await airq.get_historical_file(
+            "2024/5/12/1715000000", compressed=False
+        )
+
+    mock_compressed.assert_not_awaited()
+    mock_plain.assert_awaited_once_with("2024/5/12/1715000000")
     assert result == SAMPLE_RECORDS

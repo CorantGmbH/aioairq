@@ -539,6 +539,45 @@ class AirQ:
 
         return entries
 
+    async def _fetch_compressed_lines(self, path: str) -> list[str] | None:
+        """Try fetching a historical file via ``/file_zlib``.
+
+        Returns the decompressed lines on success, or ``None`` if the
+        compressed version is unavailable (HTTP 404) or the payload is
+        not valid zlib data (e.g. the file is still being written to).
+        Other HTTP errors (network, auth) are re-raised.
+        """
+        try:
+            raw = await self._get_raw_file(path, route="file_zlib")
+        except aiohttp.ClientResponseError as e:
+            if e.status == 404:
+                return None
+            raise
+
+        try:
+            decrypted = self.aes.decode_to_bytes(raw)
+            return zlib.decompress(decrypted).decode("utf-8").split("\n")
+        except zlib.error:
+            return None
+
+    async def _fetch_plain_lines(self, path: str) -> list[str]:
+        """Fetch a historical file via ``/file`` and split into lines."""
+        raw = await self._get_raw_file(path, route="file")
+        return raw.split("\n")
+
+    def _parse_historical_lines(self, lines: list[str]) -> list[dict]:
+        """Parse raw lines from a historical data file into measurement dicts.
+
+        Handles both plain-JSON and AES-encrypted line formats.
+        Empty lines are filtered out.
+        """
+        lines = [line for line in lines if line]
+        if not lines:
+            return []
+        if not lines[0].startswith("{"):
+            lines = [self.aes.decode(line) for line in lines]
+        return [json.loads(line) for line in lines]
+
     async def get_historical_file(
         self, path: str, *, compressed: bool = True
     ) -> list[dict]:
@@ -550,10 +589,7 @@ class AirQ:
             Full file path, e.g. ``"2024/5/12/1715000000"``.
         compressed : bool
             If True (default), attempt ``/file_zlib`` first (~1/5 size) and
-            fall back to ``/file`` if the response is not valid zlib data
-            or if ``/file_zlib`` responds with HTTP 404
-            (older firmware or file still open for writing).
-            Other errors (network, auth) are re-raised.
+            fall back to ``/file`` if the compressed version is unavailable.
             If False, always use ``/file``.
 
         Returns
@@ -561,33 +597,14 @@ class AirQ:
         list[dict]
             List of measurement dictionaries, each containing sensor readings.
         """
-        lines: list[str] = []  # only needed to silence pyright
+        lines = None
         if compressed:
-            try:
-                raw = await self._get_raw_file(path, route="file_zlib")
-                # /file_zlib returns a single encrypted blob of zlib-compressed data
-                decrypted = self.aes.decode_to_bytes(raw)
-                lines = zlib.decompress(decrypted).decode("utf-8").split("\n")
-            except aiohttp.ClientResponseError as e:
-                if e.status == 404:
-                    compressed = False  # fall back to /file
-                else:
-                    raise
-            except zlib.error:
-                compressed = False  # fall back to /file
+            lines = await self._fetch_compressed_lines(path)
 
-        if not compressed:
-            raw = await self._get_raw_file(path, route="file")
-            lines = raw.split("\n")
+        if lines is None:
+            lines = await self._fetch_plain_lines(path)
 
-        lines = [line for line in lines if line]
-        if not lines:
-            return []
-        # Lines are either unencrypted plain JSON or individually AES encrypted
-        if not lines[0].startswith("{"):
-            # yes an extra pass, but my benchmarks said it isn't prohibitive
-            lines = [self.aes.decode(line) for line in lines]
-        return [json.loads(line) for line in lines]
+        return self._parse_historical_lines(lines)
 
     async def get_possible_led_themes(self) -> List[LedThemeName]:
         return (await self._get_json_and_decode("/config"))["possibleLedTheme"]

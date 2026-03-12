@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import json
 import logging
+import zlib
 import re
 from dataclasses import dataclass, field
-from typing import Any, List, Literal, TypedDict
+from typing import Any, List, Literal, TypedDict, get_args
 
 import aiohttp
 
@@ -19,6 +20,8 @@ from aioairq.utils import is_time_in_interval, is_valid_ipv4_address
 
 _LOGGER = logging.getLogger(__name__)
 
+
+_FileRoute = Literal["file", "file_zlib", "dir"]
 LedThemeName = Literal[
     "standard",
     "standard (contrast)",
@@ -121,7 +124,7 @@ class NightMode(TypedDict):
 
 
 class AirQ:
-    _supported_routes = ["config", "log", "data", "average", "ping"]
+    _json_envelope_routes = ["config", "log", "data", "average", "ping"]
 
     def __init__(
         self,
@@ -320,16 +323,29 @@ class AirQ:
     async def get(self, subject: str) -> dict:
         """Return the given subject from the air-Q device.
 
-        This function only works on a limited set of subject specified in _supported_routes.
-        Prefer using more specialized functions."""
-        if subject not in self._supported_routes:
+        This function only works on a limited set of subject specified in
+        _json_envelope_routes.
+        """
+        if subject not in self._json_envelope_routes:
             raise NotImplementedError(
                 "AirQ.get() is currently limited to a set of requests, returning "
-                f"a dict with a key 'content' (namely {self._supported_routes})."
+                f"a dict with a key 'content' (namely {self._json_envelope_routes})."
             )
 
         _LOGGER.debug("Fetching from %s", subject)
         return await self._get_json_and_decode("/" + subject)
+
+    async def _get_raw(self, relative_url: str) -> str:
+        """GET ``relative_url`` and return the response body as text.
+
+        This is the lowest level method and the only one
+        which actually requests GET from the device.
+        """
+        async with self._session.get(
+            f"{self.anchor}{relative_url}", timeout=self._timeout
+        ) as response:
+            response.raise_for_status()
+            return await response.text()
 
     async def _get_json(self, relative_url: str) -> dict:
         """Executes a GET request to the air-Q device with the configured timeout
@@ -337,10 +353,7 @@ class AirQ:
 
         relative_url is expected to start with a slash."""
 
-        async with self._session.get(
-            f"{self.anchor}{relative_url}", timeout=self._timeout
-        ) as response:
-            json_string = await response.text()
+        json_string = await self._get_raw(relative_url)
 
         try:
             return json.loads(json_string)
@@ -349,6 +362,23 @@ class AirQ:
                 "_get_json() must only be used to query endpoints returning JSON data. "
                 f"{relative_url} returned {json_string}."
             ) from e
+
+    async def _get_raw_file(self, path: str, route: _FileRoute = "file") -> str:
+        """Fetch raw response from a route that takes an encrypted path argument.
+
+        Parameters
+        ----------
+        path : str
+            Path on the device's SD card, e.g. ``"2024/5/12/1715000000"``.
+        route : ``"file"`` | ``"file_zlib"`` | ``"dir"``
+            Device route to query. The path is AES-encrypted and passed
+            via ``?request=``.
+        """
+        if route not in get_args(_FileRoute):
+            raise ValueError(f"Cannot query {path=} from {route=}")
+        encrypted_path = self.aes.encode(path)
+        relative_url = f"/{route}?request={encrypted_path}"
+        return await self._get_raw(relative_url)
 
     async def _get_json_and_decode(self, relative_url: str) -> Any:
         """Executes a GET request to the air-Q device with the configured timeout
@@ -479,6 +509,102 @@ class AirQ:
 
     async def get_config(self) -> dict:
         return await self._get_json_and_decode("/config")
+
+    async def get_historical_files_list(self, path: str = "") -> list[str]:
+        """List entries in the device's historical data directory.
+
+        The air-Q stores data on its SD card in a year/month/day/timestamp
+        hierarchy.
+
+        Parameters
+        ----------
+        path : str
+            Directory path to list. Examples:
+
+            - ``""`` (empty): available years
+            - ``"2024"``: months in 2024
+            - ``"2024/5"``: days in May 2024
+            - ``"2024/5/12"``: file timestamps for that day
+        """
+        raw = await self._get_raw_file(path, route="dir")
+
+        decoded = self.aes.decode(raw)
+        entries: list[str] = json.loads(decoded)
+
+        # The root listing contains internal SD card directories (.zlib, .uncrypt,
+        # proc, logs, ...) alongside the actual year directories. Filter to only
+        # return plain numeric entries (years, months, days, or file timestamps).
+        if not path:
+            entries = [e for e in entries if e.isdigit()]
+
+        return entries
+
+    async def _fetch_compressed_lines(self, path: str) -> list[str] | None:
+        """Try fetching a historical file via ``/file_zlib``.
+
+        Returns the decompressed lines on success, or ``None`` if the
+        compressed version is unavailable (HTTP 404) or the payload is
+        not valid zlib data (e.g. the file is still being written to).
+        Other HTTP errors (network, auth) are re-raised.
+        """
+        try:
+            raw = await self._get_raw_file(path, route="file_zlib")
+        except aiohttp.ClientResponseError as e:
+            if e.status == 404:
+                return None
+            raise
+
+        try:
+            decrypted = self.aes.decode_to_bytes(raw)
+            return zlib.decompress(decrypted).decode("utf-8").split("\n")
+        except zlib.error:
+            return None
+
+    async def _fetch_plain_lines(self, path: str) -> list[str]:
+        """Fetch a historical file via ``/file`` and split into lines."""
+        raw = await self._get_raw_file(path, route="file")
+        return raw.split("\n")
+
+    def _parse_historical_lines(self, lines: list[str]) -> list[dict]:
+        """Parse raw lines from a historical data file into measurement dicts.
+
+        Handles both plain-JSON and AES-encrypted line formats.
+        Empty lines are filtered out.
+        """
+        lines = [line for line in lines if line]
+        if not lines:
+            return []
+        if not lines[0].startswith("{"):
+            lines = [self.aes.decode(line) for line in lines]
+        return [json.loads(line) for line in lines]
+
+    async def get_historical_file(
+        self, path: str, *, compressed: bool = True
+    ) -> list[dict]:
+        """Download a historical data file from the device.
+
+        Parameters
+        ----------
+        path : str
+            Full file path, e.g. ``"2024/5/12/1715000000"``.
+        compressed : bool
+            If True (default), attempt ``/file_zlib`` first (~1/5 size) and
+            fall back to ``/file`` if the compressed version is unavailable.
+            If False, always use ``/file``.
+
+        Returns
+        -------
+        list[dict]
+            List of measurement dictionaries, each containing sensor readings.
+        """
+        lines = None
+        if compressed:
+            lines = await self._fetch_compressed_lines(path)
+
+        if lines is None:
+            lines = await self._fetch_plain_lines(path)
+
+        return self._parse_historical_lines(lines)
 
     async def get_possible_led_themes(self) -> List[LedThemeName]:
         return (await self._get_json_and_decode("/config"))["possibleLedTheme"]

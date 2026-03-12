@@ -1,4 +1,5 @@
 """Module concerned with encryption of the data"""
+
 import base64
 
 from Crypto.Cipher import AES
@@ -26,29 +27,37 @@ class AESCipher:
         self._key = self._pass2aes(passw)
 
     def encode(self, data: str) -> str:
+        encoded = data.encode("utf-8")
+        return self.encode_bytes(encoded)
+
+    def encode_bytes(self, data: bytes) -> str:
         iv = Random.new().read(AES.block_size)
         cipher = AES.new(self._key, AES.MODE_CBC, iv)
 
-        encoded = data.encode("utf-8")
-        encrypted = iv + cipher.encrypt(self._pad(encoded))
+        encrypted = iv + cipher.encrypt(self._pad(data))
 
         return base64.b64encode(encrypted).decode("utf-8")
 
-    def decode(self, encrypted: str) -> str:
+    def decode_to_bytes(self, encrypted: str) -> bytes:
+        """Decrypt and return raw bytes, without UTF-8 decoding.
+
+        Needed for payloads containing binary data (e.g. zlib-compressed).
+        """
         decoded = base64.b64decode(encrypted)
         iv = decoded[: self._bs]
         cipher = AES.new(self._key, AES.MODE_CBC, iv)
         decrypted = cipher.decrypt(decoded[self._bs :])
         try:
-            # Currently the device does not support proper authentication.
-            # The success or failure of the authentication based on the ability
-            # to decode the response from the device.
-            decoded = decrypted.decode("utf-8")
-        except UnicodeDecodeError:
-            raise InvalidAuth(
-                "Failed to decode a message. Incorrect password"
-            ) from None
-        return self._unpad(decoded)
+            return self._unpad_bytes(decrypted)
+        except ValueError as exc:
+            raise InvalidAuth("Failed to decrypt. Incorrect password?") from exc
+
+    def decode(self, encrypted: str) -> str:
+        unpadded = self.decode_to_bytes(encrypted)
+        try:
+            return unpadded.decode("utf-8")
+        except UnicodeDecodeError as exc:
+            raise InvalidAuth("Failed to decrypt. Incorrect password?") from exc
 
     @staticmethod
     def _pad(data: bytes) -> bytes:
@@ -56,8 +65,15 @@ class AESCipher:
         return data + bytes(chr(length) * length, "utf-8")
 
     @staticmethod
-    def _unpad(data: str) -> str:
-        return data[: -ord(data[-1])]
+    def _unpad_bytes(data: bytes) -> bytes:
+        if not data:
+            raise ValueError("empty data")
+        pad_len = data[-1]
+        if pad_len < 1 or pad_len > AES.block_size:
+            raise ValueError(f"invalid padding byte {pad_len!r}")
+        if data[-pad_len:] != bytes([pad_len] * pad_len):
+            raise ValueError("padding bytes are inconsistent")
+        return data[:-pad_len]
 
     @staticmethod
     def _pass2aes(passw: str) -> str:

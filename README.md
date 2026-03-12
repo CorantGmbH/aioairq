@@ -1,5 +1,8 @@
 [![PyPI pyversions](https://img.shields.io/pypi/pyversions/aioairq.svg)](https://pypi.org/project/aioairq/0.3.0/)
 [![PyPI downloads](https://pepy.tech/badge/aioairq)](https://pypi.org/project/aioairq/0.3.0/)
+[![PyPI version](https://img.shields.io/pypi/v/aioairq)](https://pypi.org/project/aioairq/)
+[![license](https://img.shields.io/github/license/CorantGmbH/aioairq)](https://github.com/CorantGmbH/aioairq/blob/main/LICENSE)
+[![Tests](https://img.shields.io/github/actions/workflow/status/CorantGmbH/aioairq/tests.yml?label=Tests)](https://github.com/CorantGmbH/aioairq/actions)
 # PyPI package `aioairq`
 
 Python library for asynchronous data access to local air-Q devices.
@@ -25,6 +28,36 @@ async def main():
 
         data = await airq.data
         print(f"Momentary data: {data}")
+
+asyncio.run(main())
+```
+
+## Download historical data
+
+The air-Q stores measurement data on its SD card. You can browse and download this data:
+
+```python
+import asyncio
+import aiohttp
+from aioairq import AirQ
+
+ADDRESS = "123ab_air-q.local"
+PASSWORD = "airqsetup"
+
+async def main():
+    async with aiohttp.ClientSession() as session:
+        airq = AirQ(ADDRESS, PASSWORD, session)
+
+        # Browse the directory structure (year/month/day/timestamp)
+        years = await airq.get_historical_files_list()
+        days = await airq.get_historical_files_list("2024/5")
+        files = await airq.get_historical_files_list("2024/5/12")
+
+        # Download a file (compressed by default, ~1/5 the size)
+        data = await airq.get_historical_file("2024/5/12/1715000000")
+
+        # Or download uncompressed
+        data = await airq.get_historical_file("2024/5/12/1715000000", compressed=False)
 
 asyncio.run(main())
 ```

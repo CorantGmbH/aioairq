@@ -5,6 +5,7 @@ Device credentials are specified via the environment variables AIRQ_{IP,PASS,HOS
 
 import os
 import re
+import socket
 
 import aiohttp
 import pytest
@@ -15,7 +16,20 @@ from aioairq.utils import is_time_in_interval
 
 PASS = os.environ.get("AIRQ_PASS", "placeholder_password")
 IP = os.environ.get("AIRQ_IP", "192.168.0.0")
+DEVID = os.environ.get("AIRQ_DEVID", "abcd1")
+MDNS = f"{DEVID}_air-q.local"
 HOSTNAME = os.environ.get("AIRQ_HOSTNAME", "")
+
+
+def _can_resolve(hostname: str) -> bool:
+    try:
+        socket.getaddrinfo(hostname, None, socket.AF_INET)
+        return True
+    except socket.gaierror:
+        return False
+
+
+MDNS_AVAILABLE = _can_resolve(MDNS)
 BR_SET = {"brightness_day": 50, "brightness_night": 0}
 BR_NEW = {"brightness_day": 60, "brightness_night": 10}
 
@@ -27,9 +41,28 @@ async def session():
     await session.close()
 
 
-@pytest_asyncio.fixture()
-async def airq(session):
-    return AirQ(IP, PASS, session, timeout=5)
+@pytest.fixture(
+    params=[
+        "ip",
+        pytest.param(
+            "mdns",
+            marks=pytest.mark.skipif(
+                not MDNS_AVAILABLE, reason=f"mDNS name {MDNS!r} does not resolve"
+            ),
+        ),
+        pytest.param(
+            "devid",
+            marks=pytest.mark.skipif(
+                not MDNS_AVAILABLE, reason=f"mDNS name {MDNS!r} does not resolve"
+            ),
+        ),
+    ]
+)
+def airq(session, request):
+    if request.param == "devid":
+        return AirQ.from_device_id(DEVID, PASS, session, timeout=5)
+    address = {"ip": IP, "mdns": MDNS}[request.param]
+    return AirQ(address, PASS, session, timeout=5)
 
 
 @pytest.mark.asyncio

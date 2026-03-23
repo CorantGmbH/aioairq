@@ -7,6 +7,7 @@ from math import isclose
 from unittest.mock import AsyncMock, Mock, patch
 
 import aiohttp
+from aiohttp.client_exceptions import ClientConnectionError
 import pytest
 import pytest_asyncio
 from pytest import approx, fixture
@@ -16,6 +17,7 @@ from aioairq.core import ComparisonSummary, identify_warming_up_sensors
 from aioairq.encrypt import AESCipher
 
 TIMEOUT_MAX = 5
+HOST_OR_DEVID = "ca1fe"  # ambiguity: is it a hostname or device ID?
 
 
 @fixture
@@ -26,6 +28,11 @@ def ip():
 @fixture
 def mdns():
     return "a123f_air-q.local"
+
+
+@fixture
+def device_id():
+    return "a123f"
 
 
 @fixture
@@ -50,6 +57,115 @@ async def test_constructor(valid_address, passw, session):
     airq = AirQ(valid_address, passw, session)
     assert airq.anchor == "http://" + valid_address
     assert not airq._session.closed
+
+
+@pytest.mark.asyncio
+async def test_constructor_uses_address_as_is(passw, session):
+    """__init__ must never rewrite the address, even if it looks like a device ID."""
+    airq = AirQ(HOST_OR_DEVID, passw, session)
+    assert airq.address == HOST_OR_DEVID
+    assert airq.anchor == "http://" + HOST_OR_DEVID
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "device_id_input,expected_address",
+    [
+        ("b4bca", "b4bca_air-q.local"),
+        ("A1B2C", "a1b2c_air-q.local"),
+    ],
+)
+async def test_from_device_id(device_id_input, expected_address, passw, session):
+    airq = AirQ.from_device_id(device_id_input, passw, session)
+    assert airq.address == expected_address
+    assert airq.anchor == "http://" + expected_address
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "bad_device_id",
+    [
+        "192.168.0.1",
+        "b4bca_air-q.local",
+        "abcdef1234",
+        "xyz",
+        "ghijk",
+    ],
+)
+async def test_from_device_id_rejects_invalid(bad_device_id, passw, session):
+    with pytest.raises(ValueError, match="expected 5 hexadecimal"):
+        AirQ.from_device_id(bad_device_id, passw, session)
+
+
+def _fake_get_json_and_decode(reachable_address):
+    """Return a side-effect for ``_get_json_and_decode`` that simulates DNS.
+
+    Only requests whose ``self.address`` equals *reachable_address*
+    succeed (returning an empty dict); all others raise
+    ``ClientConnectionError``, as if the hostname didn't resolve.
+    """
+
+    async def _impl(self, relative_url):
+        if self.address != reachable_address:
+            raise ClientConnectionError(f"Cannot connect to {self.address}")
+        return {}
+
+    return _impl
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "true_address,passed_address,expected_call_number",
+    [
+        (HOST_OR_DEVID, HOST_OR_DEVID, 2),  # is a true hostname
+        (f"{HOST_OR_DEVID}_air-q.local", HOST_OR_DEVID, 1),  # is the device 5 hex ID
+    ],
+)
+async def test_connect_with_device_id_falls_back_to_raw_hostname(
+    true_address, passed_address, expected_call_number, passw, session
+):
+    """connect(HOST_OR_DEVID) tries mDNS first, then falls back to HOST_OR_DEVID.
+
+    The fake ``_get_json_and_decode`` only allows true_address to connect.
+    """
+    with patch.object(
+        AirQ,
+        "_get_json_and_decode",
+        autospec=True,
+        side_effect=_fake_get_json_and_decode(true_address),
+    ) as mock:
+        airq = await AirQ.connect(passed_address, passw, session, timeout=2)
+
+    assert airq.address == true_address
+    assert mock.call_count == expected_call_number
+
+
+@pytest.mark.asyncio
+async def test_connect_with_ip(valid_address, passw, session):
+    """connect() with a non-device-ID address skips the mDNS detour."""
+    with patch.object(
+        AirQ,
+        "_get_json_and_decode",
+        autospec=True,
+        side_effect=_fake_get_json_and_decode(valid_address),
+    ) as mock:
+        airq = await AirQ.connect(valid_address, passw, session, timeout=2)
+
+    assert airq.address == valid_address
+    assert mock.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_connect_both_unreachable(passw, session):
+    """connect(HOST_OR_DEVID) raises ClientConnectionError when nothing is reachable."""
+    with patch.object(
+        AirQ,
+        "_get_json_and_decode",
+        autospec=True,
+        side_effect=_fake_get_json_and_decode("__nothing__"),
+    ):
+        with pytest.raises(ClientConnectionError):
+            await AirQ.connect(HOST_OR_DEVID, passw, session, timeout=2)
 
 
 @pytest.mark.asyncio

@@ -9,6 +9,7 @@ from typing import Any, List, Literal, TypedDict, get_args
 
 import aiohttp
 
+from aiohttp.client_exceptions import ClientConnectionError
 from aioairq.encrypt import AESCipher
 from aioairq.exceptions import (
     APIAccessDenied,
@@ -125,6 +126,8 @@ class NightMode(TypedDict):
 
 class AirQ:
     _json_envelope_routes = ["config", "log", "data", "average", "ping"]
+    _DEVICE_ID_PATTERN = re.compile(r"[0-9a-fA-F]{5}")
+    _MDNS_PATTERN = "{device_id}_air-q.local"
 
     def __init__(
         self,
@@ -141,8 +144,10 @@ class AirQ:
         Parameters
         ----------
         address : str
-            Either the IP address of the device, or its mDNS.
-            Device's IP might be a more robust option (across the variety of routers)
+            Either the IP address of the device or its mDNS name.
+            The address is used as-is, without any transformation.
+            To construct from a 5-character device ID, use
+            :meth:`from_device_id` or :meth:`connect`.
         passw : str
             Device's password
         session : aiohttp.ClientSession
@@ -160,6 +165,75 @@ class AirQ:
         self._session = session
         self._timeout = aiohttp.ClientTimeout(total=timeout)
         self._previous_data: dict = {}
+
+    @classmethod
+    def from_device_id(
+        cls,
+        device_id: str,
+        passw: str,
+        session: aiohttp.ClientSession,
+        timeout: float = 15,
+    ) -> AirQ:
+        """Construct an AirQ from a 5-character hex device ID.
+
+        The device ID is expanded to the mDNS name
+        ``<device_id>_air-q.local``. This requires mDNS to be
+        available on the network. If unsure, use :meth:`connect`
+        which falls back to using the address as-is.
+
+        Raises ``ValueError`` if *device_id* is not exactly
+        5 hexadecimal characters.
+        """
+        if not cls._DEVICE_ID_PATTERN.fullmatch(device_id):
+            raise ValueError(
+                f"Invalid device ID {device_id!r}:"
+                f" expected 5 hexadecimal characters"
+            )
+        address = cls._MDNS_PATTERN.format(device_id=device_id.lower())
+        return cls(address, passw, session, timeout)
+
+    @classmethod
+    async def connect(
+        cls,
+        address: str,
+        passw: str,
+        session: aiohttp.ClientSession,
+        timeout: float = 15,
+    ) -> AirQ:
+        """Construct an AirQ and validate the connection.
+
+        If *address* looks like a 5-character hex device ID, the mDNS
+        name ``<device_id>_air-q.local`` is tried first. If that fails
+        to connect, *address* is used as-is (e.g. a custom hostname
+        from ``/etc/hosts``).
+
+        For any other address format (IP, full mDNS name, etc.) the
+        address is used directly.
+
+        Raises ``InvalidAuth`` if the password is wrong.
+        Raises ``ClientConnectionError`` if the device is unreachable.
+
+        .. note::
+
+           mDNS resolution requires multicast DNS support on both the
+           device and the host (e.g. Avahi on Linux, Bonjour on macOS).
+           Some routers block mDNS traffic. If connecting by device ID
+           fails, use the device's IP address instead, or find the
+           hostname your router assigns (e.g. ``<device_id>_air-q``)
+           via your router's admin UI or ``nslookup``.
+        """
+        if cls._DEVICE_ID_PATTERN.fullmatch(address):
+            mdns_address = cls._MDNS_PATTERN.format(device_id=address.lower())
+            airq = cls(mdns_address, passw, session, timeout)
+            try:
+                await airq.validate()
+                return airq
+            except ClientConnectionError:
+                pass  # fall through to try address as-is
+
+        airq = cls(address, passw, session, timeout)
+        await airq.validate()
+        return airq
 
     async def has_api_access(self) -> bool:
         return (await self.get_config())["APIaccess"]

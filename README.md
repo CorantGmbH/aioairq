@@ -16,12 +16,15 @@ import asyncio
 import aiohttp
 from aioairq import AirQ
 
-ADDRESS = "123ab_air-q.local"
+# The address can be an IP, an mDNS hostname, or the short device ID
+# (the 5-char hex string printed on the device, e.g. "123ab").
+# Use AirQ.connect() to auto-resolve a device ID to its mDNS name.
+ADDRESS = "123ab"
 PASSWORD = "airqsetup"
 
 async def main():
     async with aiohttp.ClientSession() as session:
-        airq = AirQ(ADDRESS, PASSWORD, session)
+        airq = await AirQ.connect(ADDRESS, PASSWORD, session)
 
         config = await airq.config
         print(f"Available sensors: {config['sensors']}")
@@ -31,6 +34,13 @@ async def main():
 
 asyncio.run(main())
 ```
+
+> **Note on mDNS:** `AirQ.connect()` resolves a device ID to `<id>_air-q.local`
+> via mDNS. This requires multicast DNS support on your network (Avahi on Linux,
+> Bonjour on macOS). Some routers block mDNS traffic — if connecting by device ID
+> fails, use the device's IP address directly. You can also look up the hostname
+> your router assigns to the device (often `<id>_air-q` without `.local`) via
+> your router's admin UI or `nslookup <id>_air-q <router-ip>`.
 
 ## Download historical data
 
